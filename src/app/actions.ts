@@ -44,9 +44,11 @@ export async function requestLoginAction(fd: FormData) {
   await attempt("/login", async () => {
     const email = str(fd, "email");
     const token = await requestLogin(email);
-    const base =
-      process.env.APP_URL ||
-      (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
+    const host =
+      process.env.VERCEL_ENV === "production"
+        ? process.env.VERCEL_PROJECT_PRODUCTION_URL
+        : process.env.VERCEL_BRANCH_URL || process.env.VERCEL_URL;
+    const base = process.env.APP_URL || (host ? `https://${host}` : "http://localhost:3000");
     await sendLoginLink(email.trim().toLowerCase(), `${base}/auth/verify?token=${encodeURIComponent(token)}`);
     return "/login?sent=1";
   });
