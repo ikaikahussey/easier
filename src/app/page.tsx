@@ -62,6 +62,9 @@ export default async function Home() {
             {formatUsdCents(EXAMPLE.contribution)}.
           </p>
         </div>
+        <Link href="/labor-pledge" className="mt-5 inline-block text-sm font-medium text-accent underline">
+          How we calculate it
+        </Link>
       </section>
 
       <section className="grid gap-6 border-t border-line py-10 text-sm md:grid-cols-3">

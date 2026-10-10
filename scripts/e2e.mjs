@@ -134,6 +134,12 @@ async function main() {
   assert.match(text(home), /Firm-grade work at plain prices/);
   assert.match(text(home), /The Labor Pledge/);
   assert.match(text(home), /hours × \$23\.08 × 12\.4% = \$\d+\.\d\d/);
+  assert.match(home.html, /href="\/labor-pledge"/);
+  const pledgePage = await anon.get("/labor-pledge");
+  assert.equal(pledgePage.status, 200);
+  assert.match(text(pledgePage), /Human hours × \$23\.08 × 12\.4% = contribution/);
+  assert.match(text(pledgePage), /Monthly close/);
+  assert.match(text(pledgePage), /17\.85 hours × \$23\.08 = \$411\.98 of labor × 12\.4% = \$51\.09 contributed/);
   assert.equal(home.headers.get("x-frame-options"), "DENY");
   assert.match(home.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   const gated = await anon.get("/app");

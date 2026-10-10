@@ -26,7 +26,7 @@ type Ctx = RuleContext<BooksIntake, BooksData>;
 
 export const BOOKS_MONTHLY_PRICE = 450_00;
 /** Accounts assumed before the trial balance is uploaded. */
-const TYPICAL_ACCOUNTS = 60;
+export const TYPICAL_BOOKS_ACCOUNTS = 60;
 
 /** Hours a human bookkeeper would spend closing one month. Working estimates; refine with time studies. */
 export function booksLabor(accounts: number): LaborTask[] {
@@ -94,7 +94,7 @@ export const books = defineProduct<BooksIntake, BooksData>({
   // Service-level target: financials delivered by the 15th of the following month.
   deadline: (period) => deadline(period, { months: 1, day: 15 }),
   quote: () => quote("Monthly", [{ label: "Monthly close and financial statements", cents: BOOKS_MONTHLY_PRICE }]),
-  labor: (_intake, data) => booksLabor(data?.ledger.tb.accounts.length ?? TYPICAL_ACCOUNTS),
+  labor: (_intake, data) => booksLabor(data?.ledger.tb.accounts.length ?? TYPICAL_BOOKS_ACCOUNTS),
 
   async build(input, ai) {
     const { ledger, editable } = await loadNonprofitLedger(input, ai);

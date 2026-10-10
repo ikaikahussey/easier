@@ -38,6 +38,14 @@ export function Shell({ actor, children }: { actor?: Actor; children: ReactNode 
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+      <footer className="no-print border-t border-line">
+        <div className="mx-auto flex max-w-6xl flex-wrap gap-5 px-4 py-6 text-sm text-muted">
+          <span>Plainfirm</span>
+          <Link href="/labor-pledge" className="hover:text-accent">
+            The Labor Pledge
+          </Link>
+        </div>
+      </footer>
     </div>
   );
 }

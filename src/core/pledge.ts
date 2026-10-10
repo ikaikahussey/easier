@@ -23,6 +23,7 @@ export const LABOR_PLEDGE = {
   hourlyWage: envCents(process.env.LIVING_WAGE_HOURLY_CENTS, 23_08),
   wageBasis:
     "the national average living wage for one working adult (unweighted average of the 50 states and D.C., MIT Living Wage Calculator, 2025)",
+  wageSource: "https://livingwage.mit.edu/",
   /** Set before launch: the fund that receives contributions. */
   recipient: process.env.PLEDGE_RECIPIENT || "a worker retirement fund",
 } as const;
