@@ -16,11 +16,12 @@ async function connect(): Promise<Db> {
     if (typeof WebSocket !== "undefined") neonConfig.webSocketConstructor = WebSocket;
     return drizzle({ client: new Pool({ connectionString: url }), schema }) as unknown as Db;
   }
-  // Local development without Neon: embedded Postgres persisted in ./.pglite.
+  if (process.env.VERCEL) throw new Error("DATABASE_URL is required on Vercel");
+  // Local development without Neon: embedded Postgres persisted in ./.pglite (or PGLITE_DIR).
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");
-  const db = drizzle({ client: new PGlite(path.join(process.cwd(), ".pglite")), schema });
+  const db = drizzle({ client: new PGlite(process.env.PGLITE_DIR ?? path.join(process.cwd(), ".pglite")), schema });
   await migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
   return db as unknown as Db;
 }

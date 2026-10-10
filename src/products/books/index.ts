@@ -24,6 +24,8 @@ export interface BooksData {
 type Ctx = RuleContext<BooksIntake, BooksData>;
 
 export const BOOKS_MONTHLY_PRICE = 450_00;
+/** ESTIMATE of a traditional outsourced nonprofit bookkeeping fee; replace with survey data. */
+export const BOOKS_MONTHLY_BENCHMARK = 1_200_00;
 
 const rules: Rule<Ctx>[] = [
   ...nonprofitLedgerRules<Ctx>((c) => c.data.ledger),
@@ -79,7 +81,7 @@ export const books = defineProduct<BooksIntake, BooksData>({
   documents: [{ ...TRIAL_BALANCE, label: "Year-to-date trial balance (CSV)" }],
   // Service-level target: financials delivered by the 15th of the following month.
   deadline: (period) => deadline(period, { months: 1, day: 15 }),
-  quote: () => quote("Monthly", [{ label: "Monthly close and financial statements", cents: BOOKS_MONTHLY_PRICE }]),
+  quote: () => quote("Monthly", [{ label: "Monthly close and financial statements", cents: BOOKS_MONTHLY_PRICE, benchmark: BOOKS_MONTHLY_BENCHMARK }]),
 
   async build(input, ai) {
     const { ledger, editable } = await loadNonprofitLedger(input, ai);

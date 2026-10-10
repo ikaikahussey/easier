@@ -37,6 +37,17 @@ export const PRICING = {
   extraSchedule: 150_00,
 } as const;
 
+/**
+ * Traditional-firm fee benchmarks used for the Labor Pledge. ESTIMATES — replace
+ * with a documented market survey before publishing.
+ */
+export const BENCHMARK = {
+  "990-N": 300_00,
+  "990-EZ": 2_500_00,
+  "990": 6_000_00,
+  extraSchedule: 500_00,
+} as const;
+
 const BUNDLED = new Set(["A", "B", "O"]);
 
 type Ctx = RuleContext<Form990Intake, Form990Data>;
@@ -330,13 +341,19 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
   deadline: (period) => deadline(period, { months: 5, day: 15, extensionMonths: 6 }),
 
   quote: (_intake, data) => {
-    if (!data) return quote("Estimate", [{ label: "Form 990 (estimate until books are uploaded)", cents: PRICING["990"] }]);
-    const lines: QuoteLine[] = [{ label: `Form ${data.formType}`, cents: PRICING[data.formType] }];
+    if (!data)
+      return quote("Estimate", [
+        { label: "Form 990 (estimate until books are uploaded)", cents: PRICING["990"], benchmark: BENCHMARK["990"] },
+      ]);
+    const lines: QuoteLine[] = [
+      { label: `Form ${data.formType}`, cents: PRICING[data.formType], benchmark: BENCHMARK[data.formType] },
+    ];
     const extras = data.schedules.filter((s) => !BUNDLED.has(s.schedule));
     if (data.formType !== "990-N" && extras.length)
       lines.push({
         label: `Additional schedules (${extras.map((s) => s.schedule).join(", ")})`,
         cents: extras.length * PRICING.extraSchedule,
+        benchmark: extras.length * BENCHMARK.extraSchedule,
       });
     return quote(`Form ${data.formType}`, lines);
   },

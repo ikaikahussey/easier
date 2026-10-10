@@ -5,6 +5,7 @@ import type { AiRun, AiRunner } from "./ai/llm";
 import type { Deadline } from "./deadlines";
 import type { Account } from "./ledger/trial-balance";
 import type { LineCatalog, Mapping } from "./ledger/catalog";
+import { pledgeFor, type PledgeTerms } from "./pledge";
 
 /** The client profile shared across every product the organization buys. */
 export interface OrgProfile {
@@ -83,12 +84,15 @@ export type ReviewSection = { id: string; title: string; note?: string } & (
 export interface QuoteLine {
   label: string;
   cents: Cents;
+  /** Typical traditional-firm fee for this line; drives the Labor Pledge. */
+  benchmark?: Cents;
 }
 
 export interface Quote {
   tier: string;
   lines: QuoteLine[];
   total: Cents;
+  pledge?: PledgeTerms;
 }
 
 export interface BuildResult<D> {
@@ -132,5 +136,7 @@ export interface DraftSnapshot<D = unknown> {
 }
 
 export function quote(tier: string, lines: QuoteLine[]): Quote {
-  return { tier, lines, total: lines.reduce((t, l) => t + l.cents, 0) };
+  const total = lines.reduce((t, l) => t + l.cents, 0);
+  const benchmark = lines.reduce((t, l) => t + (l.benchmark ?? l.cents), 0);
+  return { tier, lines, total, pledge: pledgeFor(benchmark, total) };
 }

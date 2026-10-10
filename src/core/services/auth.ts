@@ -90,8 +90,9 @@ export function readSessionToken(token: string | undefined, now = Date.now()): s
 /** Sends the sign-in link through Resend when configured; otherwise logs it for local development. */
 export async function sendLoginLink(email: string, url: string): Promise<void> {
   const key = process.env.RESEND_API_KEY;
-  if (!key) {
-    if (process.env.NODE_ENV === "production") throw new Error("RESEND_API_KEY is required in production");
+  if (!key || process.env.MAIL_TRANSPORT === "log") {
+    if (process.env.NODE_ENV === "production" && process.env.MAIL_TRANSPORT !== "log")
+      throw new Error("RESEND_API_KEY is required in production (or MAIL_TRANSPORT=log for local testing)");
     console.info(`[plainfirm] Sign-in link for ${email}: ${url}`);
     return;
   }

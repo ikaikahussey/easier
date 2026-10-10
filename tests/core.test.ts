@@ -202,3 +202,21 @@ describe("AiRunner", () => {
     expect(r.runs[0]!.error).toBe("down");
   });
 });
+
+describe("Labor Pledge", async () => {
+  const { pledgeFor, LABOR_PLEDGE } = await import("@/core/pledge");
+  const { quote } = await import("@/core/product");
+  it("contributes the payroll-tax rate on displaced labor, never negative", () => {
+    expect(LABOR_PLEDGE.rate).toBe(0.124);
+    expect(pledgeFor(6_000_00, 1_950_00)).toEqual({ benchmark: 6_000_00, displacedLabor: 4_050_00, contribution: 502_20 });
+    expect(pledgeFor(100_00, 200_00).contribution).toBe(0);
+  });
+  it("is attached to every quote from line benchmarks", () => {
+    const q = quote("T", [
+      { label: "a", cents: 1_000_00, benchmark: 3_000_00 },
+      { label: "b", cents: 100_00 },
+    ]);
+    expect(q.pledge).toEqual({ benchmark: 3_100_00, displacedLabor: 2_000_00, contribution: 248_00 });
+    expect(q.total).toBe(1_100_00);
+  });
+});
