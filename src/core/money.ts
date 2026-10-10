@@ -33,6 +33,10 @@ export const sum = (values: Iterable<Cents>): Cents => {
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 export const formatUsd = (c: Cents): string => usd.format(toDollars(c));
 
+const usdCents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+/** Dollars and cents, for small amounts such as hourly wages and pledge contributions. */
+export const formatUsdCents = (c: Cents): string => usdCents.format(c / 100);
+
 /** Split an amount across weights without losing cents; remainder goes to the largest share. */
 export function allocate<K extends string>(amount: Cents, weights: Record<K, number>): Record<K, Cents> {
   const keys = Object.keys(weights) as K[];

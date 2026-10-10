@@ -4,7 +4,7 @@ import { withSystem, withTenant, type Tx } from "../db/client";
 import { documents, drafts, engagements, events, organizations } from "../db/schema";
 import { buildDraft } from "../draft";
 import { formSchema } from "../fields";
-import { emptyOverrides, type DraftSnapshot, type OrgProfile, type Overrides, type PriorYear, type Quote } from "../product";
+import { emptyOverrides, priceEngagement, type DraftSnapshot, type OrgProfile, type Overrides, type PriorYear, type Quote } from "../product";
 import { blocking } from "../rules";
 import { availableActions, nextStatus, STATUSES, WorkflowError, type Action, type Status } from "../workflow";
 import { getProduct } from "@/products";
@@ -215,7 +215,7 @@ export async function createEngagement(
       period: input.period,
       status: "awaiting_documents" as Status,
       intakeEnc: vault.seal(intake.data, ctx.intake(id)),
-      quote: product.quote(intake.data),
+      quote: priceEngagement(product, intake.data),
       dueDate: due?.original ?? null,
       extendedDueDate: due?.extended ?? null,
     };
@@ -314,7 +314,7 @@ async function rebuild(tx: Tx, actor: Actor, e: EngagementRow, vault: OrgVault, 
     .set({
       errorCount,
       warningCount,
-      quote: product.quote(vault.open(e.intakeEnc, ctx.intake(e.id)), snapshot.data),
+      quote: priceEngagement(product, vault.open(e.intakeEnc, ctx.intake(e.id)), snapshot.data),
       updatedAt: new Date(),
     })
     .where(eq(engagements.id, e.id));

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PRODUCTS } from "@/products";
-import { formatUsd } from "@/core/money";
-import { BENCHMARK, PRICING } from "@/products/form-990";
+import { formatUsd, formatUsdCents } from "@/core/money";
+import { form990Labor, PRICING, TYPICAL_990 } from "@/products/form-990";
 import { LABOR_PLEDGE, pledgeFor } from "@/core/pledge";
 import { BOOKS_MONTHLY_PRICE } from "@/products/books";
 import { Shell } from "@/ui/components";
@@ -11,6 +11,8 @@ const FROM: Record<string, string> = {
   "form-990": `From ${formatUsd(PRICING["990-N"])} · Form 990-EZ ${formatUsd(PRICING["990-EZ"])} · Form 990 ${formatUsd(PRICING["990"])}`,
   books: `${formatUsd(BOOKS_MONTHLY_PRICE)} per month`,
 };
+
+const EXAMPLE = pledgeFor(form990Labor(TYPICAL_990));
 
 export default async function Home() {
   const actor = await currentActor();
@@ -48,14 +50,16 @@ export default async function Home() {
         <h2 className="mt-2 text-3xl font-semibold">When AI does the work, workers still get paid in.</h2>
         <div className="mt-4 grid gap-6 text-sm md:grid-cols-2">
           <p>
-            Lower prices come from AI doing work people used to be paid for. On every engagement, we calculate the value of
-            that displaced labor (what a traditional firm would have charged, minus our fee) and voluntarily contribute{" "}
+            Lower prices come from AI doing work people used to be paid for. For every engagement, we estimate the hours a
+            human professional would have spent on it, value those hours at a living wage of{" "}
+            {formatUsdCents(LABOR_PLEDGE.hourlyWage)} an hour ({LABOR_PLEDGE.wageBasis}), and voluntarily contribute{" "}
             {Math.round(LABOR_PLEDGE.rate * 1000) / 10}%, {LABOR_PLEDGE.rateBasis}, to {LABOR_PLEDGE.recipient}.
           </p>
           <p>
-            The contribution comes out of our fee, not on top of it, and every quote shows the amount. On a{" "}
-            {formatUsd(PRICING["990"])} Form 990 that would cost about {formatUsd(BENCHMARK["990"])} at a traditional firm,
-            we contribute {formatUsd(pledgeFor(BENCHMARK["990"], PRICING["990"]).contribution)}.
+            The contribution comes out of our fee, not on top of it, and every quote shows the hours and the amount. A typical
+            Form 990 would take a preparer about {EXAMPLE.hours} hours: {EXAMPLE.hours} hours ×{" "}
+            {formatUsdCents(EXAMPLE.hourlyWage)} × {Math.round(LABOR_PLEDGE.rate * 1000) / 10}% ={" "}
+            {formatUsdCents(EXAMPLE.contribution)}.
           </p>
         </div>
       </section>

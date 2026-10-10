@@ -1,5 +1,6 @@
 import { deadline, parseIsoDate } from "@/core/deadlines";
 import { formatUsd, toDollars, type Cents } from "@/core/money";
+import { laborTask, type LaborTask } from "@/core/pledge";
 import { defineProduct, quote, type QuoteLine, type EditableText, type ReviewSection, type RuleContext } from "@/core/product";
 import { amountTable, fields, table } from "@/core/render";
 import type { Rule } from "@/core/rules";
@@ -37,18 +38,50 @@ export const PRICING = {
   extraSchedule: 150_00,
 } as const;
 
-/**
- * Traditional-firm fee benchmarks used for the Labor Pledge. ESTIMATES — replace
- * with a documented market survey before publishing.
- */
-export const BENCHMARK = {
-  "990-N": 300_00,
-  "990-EZ": 2_500_00,
-  "990": 6_000_00,
-  extraSchedule: 500_00,
-} as const;
-
 const BUNDLED = new Set(["A", "B", "O"]);
+
+/** What drives a human preparer's time on a return. */
+export interface Form990Workload {
+  formType: FormType;
+  accounts: number;
+  expenseLines: number;
+  programs: number;
+  officers: number;
+  schedules: string[];
+}
+
+/** Assumed workload before the books are uploaded, and the example on the landing page. */
+export const TYPICAL_990: Form990Workload = {
+  formType: "990",
+  accounts: 60,
+  expenseLines: 18,
+  programs: 3,
+  officers: 8,
+  schedules: ["A", "B", "D", "O"],
+};
+
+/**
+ * Hours a human preparer would spend on the return. Per-item rates are working
+ * estimates of professional preparation time; refine with time studies from reviewers.
+ */
+export function form990Labor(w: Form990Workload): LaborTask[] {
+  if (w.formType === "990-N") return [laborTask("Confirm 990-N eligibility and file the e-Postcard", 0.75)];
+  const full = w.formType === "990";
+  const scheduleList = w.schedules.filter((s) => s !== "O");
+  return [
+    laborTask("Client intake and engagement setup", 1),
+    laborTask(`Classify ${w.accounts} ledger accounts to IRS lines (3 min each)`, 0, 0.05, w.accounts),
+    laborTask("Tie out balances, prior-year figures, and form totals", full ? 1.5 : 0.75),
+    ...(full ? [laborTask(`Allocate ${w.expenseLines} expense lines by function (6 min each)`, 0.5, 0.1, w.expenseLines)] : []),
+    laborTask(`Write ${w.programs} program accomplishment descriptions (45 min each)`, 0, 0.75, w.programs),
+    laborTask(`List ${w.officers} officers and directors with compensation (6 min each)`, 0, 0.1, w.officers),
+    laborTask(full ? "Governance answers and Schedule O narratives" : "Governance answers", full ? 1.5 : 0.5),
+    ...(scheduleList.length
+      ? [laborTask(`Prepare Schedule${scheduleList.length > 1 ? "s" : ""} ${scheduleList.join(", ")} (90 min each)`, 0, 1.5, scheduleList.length)]
+      : []),
+    laborTask("Assemble the return and review package", full ? 1 : 0.5),
+  ];
+}
 
 type Ctx = RuleContext<Form990Intake, Form990Data>;
 
@@ -343,20 +376,33 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
   quote: (_intake, data) => {
     if (!data)
       return quote("Estimate", [
-        { label: "Form 990 (estimate until books are uploaded)", cents: PRICING["990"], benchmark: BENCHMARK["990"] },
+        { label: "Form 990 (estimate until books are uploaded)", cents: PRICING["990"] },
       ]);
     const lines: QuoteLine[] = [
-      { label: `Form ${data.formType}`, cents: PRICING[data.formType], benchmark: BENCHMARK[data.formType] },
+      { label: `Form ${data.formType}`, cents: PRICING[data.formType] },
     ];
     const extras = data.schedules.filter((s) => !BUNDLED.has(s.schedule));
     if (data.formType !== "990-N" && extras.length)
       lines.push({
         label: `Additional schedules (${extras.map((s) => s.schedule).join(", ")})`,
         cents: extras.length * PRICING.extraSchedule,
-        benchmark: extras.length * BENCHMARK.extraSchedule,
       });
     return quote(`Form ${data.formType}`, lines);
   },
+
+  labor: (intake, data) =>
+    form990Labor(
+      data
+        ? {
+            formType: data.formType,
+            accounts: data.ledger.tb.accounts.length,
+            expenseLines: data.functional.length,
+            programs: data.programs.length,
+            officers: intake.officers.length,
+            schedules: data.schedules.map((s) => s.schedule),
+          }
+        : { ...TYPICAL_990, programs: intake.programs.length, officers: intake.officers.length },
+    ),
 
   async build(input, ai) {
     const { ledger, editable } = await loadNonprofitLedger(input, ai);

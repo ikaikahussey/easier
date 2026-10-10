@@ -96,6 +96,26 @@ describe("Form 990 draft (full return)", async () => {
     expect(form990.quote(intake990).tier).toBe("Estimate");
   });
 
+  it("estimates human hours from the work in the draft", async () => {
+    const { priceEngagement } = await import("@/core/product");
+    const { pledgeFor } = await import("@/core/pledge");
+    const tasks = form990.labor(intake990, d);
+    expect(tasks.find((t) => t.label.startsWith("Classify"))!.hours).toBeCloseTo(d.ledger.tb.accounts.length * 0.05, 5);
+    expect(tasks.some((t) => t.label.startsWith("Prepare Schedules A, B, D, G, I"))).toBe(true);
+    const q = priceEngagement(form990, intake990, d);
+    expect(q.pledge).toEqual(pledgeFor(tasks));
+    expect(q.pledge!.contribution).toBe(Math.round(Math.round(q.pledge!.hours * 23_08) * 0.124));
+    expect(q.total).toBe(PRICING["990"] + 3 * PRICING.extraSchedule);
+  });
+
+  it("estimates 990-N labor as a single short task", async () => {
+    const { form990Labor, TYPICAL_990 } = await import("@/products/form-990");
+    expect(form990Labor({ ...TYPICAL_990, formType: "990-N" })).toEqual([
+      { label: "Confirm 990-N eligibility and file the e-Postcard", hours: 0.75 },
+    ]);
+    expect(form990Labor({ ...TYPICAL_990, formType: "990-EZ" }).some((t) => t.label.startsWith("Allocate"))).toBe(false);
+  });
+
   it("renders full-return worksheet sections", () => {
     expect(draft.sections.map((s) => s.id)).toEqual([
       "summary", "schedules", "programs", "officers", "governance", "part-viii", "part-ix",

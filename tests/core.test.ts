@@ -204,19 +204,19 @@ describe("AiRunner", () => {
 });
 
 describe("Labor Pledge", async () => {
-  const { pledgeFor, LABOR_PLEDGE } = await import("@/core/pledge");
-  const { quote } = await import("@/core/product");
-  it("contributes the payroll-tax rate on displaced labor, never negative", () => {
+  const { pledgeFor, laborTask, LABOR_PLEDGE } = await import("@/core/pledge");
+  it("is human hours × living wage × the OASDI rate", () => {
     expect(LABOR_PLEDGE.rate).toBe(0.124);
-    expect(pledgeFor(6_000_00, 1_950_00)).toEqual({ benchmark: 6_000_00, displacedLabor: 4_050_00, contribution: 502_20 });
-    expect(pledgeFor(100_00, 200_00).contribution).toBe(0);
+    expect(LABOR_PLEDGE.hourlyWage).toBe(23_08);
+    const p = pledgeFor([laborTask("setup", 1), laborTask("accounts", 0, 0.05, 60)]);
+    expect(p.hours).toBe(4);
+    expect(p.laborValue).toBe(92_32); // 4 h × $23.08
+    expect(p.contribution).toBe(11_45); // $92.32 × 12.4% = $11.447
   });
-  it("is attached to every quote from line benchmarks", () => {
-    const q = quote("T", [
-      { label: "a", cents: 1_000_00, benchmark: 3_000_00 },
-      { label: "b", cents: 100_00 },
-    ]);
-    expect(q.pledge).toEqual({ benchmark: 3_100_00, displacedLabor: 2_000_00, contribution: 248_00 });
-    expect(q.total).toBe(1_100_00);
+  it("drops zero-hour tasks and accepts another wage", () => {
+    const p = pledgeFor([laborTask("none", 0), laborTask("work", 10)], 30_00);
+    expect(p.tasks.map((t) => t.label)).toEqual(["work"]);
+    expect(p.laborValue).toBe(300_00);
+    expect(p.contribution).toBe(37_20);
   });
 });

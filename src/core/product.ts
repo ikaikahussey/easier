@@ -5,7 +5,7 @@ import type { AiRun, AiRunner } from "./ai/llm";
 import type { Deadline } from "./deadlines";
 import type { Account } from "./ledger/trial-balance";
 import type { LineCatalog, Mapping } from "./ledger/catalog";
-import { pledgeFor, type PledgeTerms } from "./pledge";
+import { pledgeFor, type LaborTask, type PledgeTerms } from "./pledge";
 
 /** The client profile shared across every product the organization buys. */
 export interface OrgProfile {
@@ -84,8 +84,6 @@ export type ReviewSection = { id: string; title: string; note?: string } & (
 export interface QuoteLine {
   label: string;
   cents: Cents;
-  /** Typical traditional-firm fee for this line; drives the Labor Pledge. */
-  benchmark?: Cents;
 }
 
 export interface Quote {
@@ -119,7 +117,12 @@ export interface ProductDefinition<I = any, D = any> {
   documents: DocumentKind[];
   deadline?: (period: string) => Deadline;
   /** Price from intake alone, refined once a draft exists. */
-  quote: (intake: I, data?: D) => Quote;
+  quote: (intake: I, data?: D) => Omit<Quote, "pledge">;
+  /**
+   * Hours a human professional would have spent on this engagement, task by task.
+   * Drives the Labor Pledge; called with intake alone before a draft exists.
+   */
+  labor: (intake: I, data?: D) => LaborTask[];
   build: (input: BuildInput<I>, ai: AiRunner) => Promise<BuildResult<D>>;
   rules: Rule<RuleContext<I, D>>[];
   render: (data: D, input: BuildInput<I>) => ReviewSection[];
@@ -135,8 +138,11 @@ export interface DraftSnapshot<D = unknown> {
   ai: AiRun[];
 }
 
-export function quote(tier: string, lines: QuoteLine[]): Quote {
-  const total = lines.reduce((t, l) => t + l.cents, 0);
-  const benchmark = lines.reduce((t, l) => t + (l.benchmark ?? l.cents), 0);
-  return { tier, lines, total, pledge: pledgeFor(benchmark, total) };
+export function quote(tier: string, lines: QuoteLine[]): Omit<Quote, "pledge"> {
+  return { tier, lines, total: lines.reduce((t, l) => t + l.cents, 0) };
+}
+
+/** The price a client sees, with the Labor Pledge contribution computed from the product's labor estimate. */
+export function priceEngagement<I, D>(product: ProductDefinition<I, D>, intake: I, data?: D): Quote {
+  return { ...product.quote(intake, data), pledge: pledgeFor(product.labor(intake, data)) };
 }

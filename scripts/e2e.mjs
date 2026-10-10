@@ -133,6 +133,7 @@ async function main() {
   assert.equal(home.status, 200);
   assert.match(text(home), /Firm-grade work at plain prices/);
   assert.match(text(home), /The Labor Pledge/);
+  assert.match(text(home), /hours × \$23\.08 × 12\.4% = \$\d+\.\d\d/);
   assert.equal(home.headers.get("x-frame-options"), "DENY");
   assert.match(home.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   const gated = await anon.get("/app");
@@ -200,7 +201,7 @@ async function main() {
   assert.match(text(page), /In review/);
   assert.match(text(page), /could not be classified/);
   assert.match(text(page), /Statement of Functional Expenses/);
-  assert.match(text(page), /Labor Pledge: from this fee, Plainfirm contributes \$\d/);
+  assert.match(text(page), /Labor Pledge: this work would take a person about [\d.]+ hours\. At a living wage of \$23\.08 an hour, that is \$[\d,.]+ of labor\. From this fee,\s*Plainfirm contributes \$[\d.]+ \(12\.4%\)/);
   const engagementId = engagementUrl.split("/").pop();
 
   // Client B cannot reach client A's engagement

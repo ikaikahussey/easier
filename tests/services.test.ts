@@ -78,6 +78,8 @@ describe("engagement lifecycle", () => {
     expect((d.draft!.snapshot.data as Form990Data).formType).toBe("990");
     expect(d.errorCount).toBeGreaterThan(0);
     expect(d.quote.tier).toBe("Form 990");
+    expect(d.quote.pledge!.hours).toBeGreaterThan(0);
+    expect(d.quote.pledge!.contribution).toBe(Math.round(d.quote.pledge!.laborValue * 0.124));
     expect(d.dueDate).toBe("2026-05-15");
     // Prior-year public filing feeds the variance check.
     expect(d.draft!.snapshot.findings.map((f) => f.ruleId)).not.toContain("f990.prior_year_variance");

@@ -1,5 +1,6 @@
 import { deadline } from "@/core/deadlines";
 import { formatUsd } from "@/core/money";
+import { laborTask, type LaborTask } from "@/core/pledge";
 import { defineProduct, quote, type RuleContext } from "@/core/product";
 import { amountTable, fields } from "@/core/render";
 import type { Rule } from "@/core/rules";
@@ -24,8 +25,19 @@ export interface BooksData {
 type Ctx = RuleContext<BooksIntake, BooksData>;
 
 export const BOOKS_MONTHLY_PRICE = 450_00;
-/** ESTIMATE of a traditional outsourced nonprofit bookkeeping fee; replace with survey data. */
-export const BOOKS_MONTHLY_BENCHMARK = 1_200_00;
+/** Accounts assumed before the trial balance is uploaded. */
+const TYPICAL_ACCOUNTS = 60;
+
+/** Hours a human bookkeeper would spend closing one month. Working estimates; refine with time studies. */
+export function booksLabor(accounts: number): LaborTask[] {
+  return [
+    laborTask("Collect and import the month's ledger", 0.5),
+    laborTask(`Review and classify ${accounts} accounts (2 min each)`, 0, 1 / 30, accounts),
+    laborTask("Reconciliation checks and tie-out", 1.5),
+    laborTask("Prepare statements of activities and financial position", 1),
+    laborTask("Close notes for the board", 0.5),
+  ];
+}
 
 const rules: Rule<Ctx>[] = [
   ...nonprofitLedgerRules<Ctx>((c) => c.data.ledger),
@@ -81,7 +93,8 @@ export const books = defineProduct<BooksIntake, BooksData>({
   documents: [{ ...TRIAL_BALANCE, label: "Year-to-date trial balance (CSV)" }],
   // Service-level target: financials delivered by the 15th of the following month.
   deadline: (period) => deadline(period, { months: 1, day: 15 }),
-  quote: () => quote("Monthly", [{ label: "Monthly close and financial statements", cents: BOOKS_MONTHLY_PRICE, benchmark: BOOKS_MONTHLY_BENCHMARK }]),
+  quote: () => quote("Monthly", [{ label: "Monthly close and financial statements", cents: BOOKS_MONTHLY_PRICE }]),
+  labor: (_intake, data) => booksLabor(data?.ledger.tb.accounts.length ?? TYPICAL_ACCOUNTS),
 
   async build(input, ai) {
     const { ledger, editable } = await loadNonprofitLedger(input, ai);

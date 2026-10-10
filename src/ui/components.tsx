@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { FieldSpec, FormSpec } from "@/core/fields";
-import { formatUsd } from "@/core/money";
+import { formatUsd, formatUsdCents } from "@/core/money";
 import { LABOR_PLEDGE, type PledgeTerms } from "@/core/pledge";
 import type { Quote, ReviewSection } from "@/core/product";
 import type { Finding } from "@/core/rules";
@@ -102,11 +102,25 @@ export function QuoteBox({ quote }: { quote: Quote }) {
 
 export function PledgeNote({ pledge }: { pledge: PledgeTerms }) {
   return (
-    <p className="mt-3 rounded-md bg-accent-soft px-3 py-2 text-xs text-accent">
-      Labor Pledge: from this fee, Plainfirm contributes {formatUsd(pledge.contribution)} to {LABOR_PLEDGE.recipient} —{" "}
-      {Math.round(LABOR_PLEDGE.rate * 1000) / 10}% of the {formatUsd(pledge.displacedLabor)} in human labor this work would
-      otherwise have paid for.
-    </p>
+    <div className="mt-3 rounded-md bg-accent-soft px-3 py-2 text-xs text-accent">
+      <p>
+        Labor Pledge: this work would take a person about {pledge.hours} hours. At a living wage of{" "}
+        {formatUsdCents(pledge.hourlyWage)} an hour, that is {formatUsdCents(pledge.laborValue)} of labor. From this fee,
+        Plainfirm contributes {formatUsdCents(pledge.contribution)} ({Math.round(LABOR_PLEDGE.rate * 1000) / 10}%) to{" "}
+        {LABOR_PLEDGE.recipient}.
+      </p>
+      <details className="mt-1">
+        <summary className="cursor-pointer">How the hours are estimated</summary>
+        <ul className="mt-1 space-y-0.5">
+          {pledge.tasks.map((t) => (
+            <li key={t.label} className="flex justify-between gap-3">
+              <span>{t.label}</span>
+              <span className="tabular-nums">{t.hours} h</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
   );
 }
 
