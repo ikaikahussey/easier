@@ -1,0 +1,38 @@
+Account Number,Account Name,Type,Debit,Credit
+1000,Operating Checking,Bank,"85,000.00",
+1010,Savings,Bank,"120,000.00",
+1200,Grants Receivable,Other Current Asset,"40,000.00",
+1500,Computer Equipment,Fixed Asset,"30,000.00",
+1510,Accumulated Depreciation,Fixed Asset,,"12,000.00"
+1600,Security Deposit,Other Asset,"3,000.00",
+2000,Accounts Payable,Accounts Payable,,"8,500.00"
+2100,Accrued Payroll,Other Current Liability,,"6,000.00"
+2400,Deferred Revenue,Other Current Liability,,"10,000.00"
+3000,Net Assets Without Donor Restrictions,Equity,,"200,700.00"
+3100,Net Assets With Donor Restrictions,Equity,,"25,000.00"
+4000,Individual Contributions,Income,,"180,000.00"
+4100,Foundation Grants,Income,,"150,000.00"
+4200,State Grant,Income,,"90,000.00"
+4300,Program Fees,Income,,"45,000.00"
+4400,Gala Revenue,Income,,"30,000.00"
+4500,Interest Income,Other Income,,"1,500.00"
+5000,Executive Director Salary,Expense,"95,000.00",
+5010,Staff Salaries,Expense,"210,000.00",
+5100,Payroll Taxes,Expense,"23,000.00",
+5110,Health Insurance,Expense,"28,000.00",
+5120,403b Retirement Contributions,Expense,"6,000.00",
+6000,Accounting Fees,Expense,"12,000.00",
+6010,Legal Fees,Expense,"3,000.00",
+6020,Consultants,Expense,"15,000.00",
+6100,Rent,Expense,"36,000.00",
+6110,Utilities,Expense,"6,000.00",
+6200,Office Supplies,Expense,"4,000.00",
+6210,Software Subscriptions,Expense,"5,500.00",
+6300,Travel,Expense,"3,500.00",
+6400,Insurance,Expense,"4,200.00",
+6500,Depreciation,Expense,"6,000.00",
+6600,Gala Expenses,Expense,"9,000.00",
+6700,Scholarships,Expense,"12,000.00",
+6800,Misc Expense,Expense,"1,800.00",
+6900,Widget Thing,Expense,700.00,
+,TOTAL,,"758,700.00","758,700.00"
