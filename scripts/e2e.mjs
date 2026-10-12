@@ -131,8 +131,11 @@ async function main() {
   const anon = new Browser();
   const home = await anon.get("/");
   assert.equal(home.status, 200);
-  assert.match(text(home), /Welcome to easier.company/);
-  assert.match(text(home), /THE LABOR PLEDGE/);
+  assert.match(text(home), /Nonprofit taxes,\s*made easier\./);
+  assert.match(text(home), /The Labor Pledge/);
+  // Every control-looking element must do something: no decorative window buttons or status text.
+  assert.doesNotMatch(home.html, /titlebar-buttons|>Ready</);
+  for (const el of home.doc.querySelectorAll(".btn")) assert.ok(el.getAttribute("href") || el.tagName === "BUTTON", "inert .btn");
   assert.match(text(home), /hours × \$23\.08 × 12\.4% = \$\d+\.\d\d/);
   assert.match(home.html, /href="\/labor-pledge"/);
   const pledgePage = await anon.get("/labor-pledge");

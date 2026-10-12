@@ -89,7 +89,7 @@ export default async function ReviewPage({
               {ledger && (
                 <Card title="Account classification" aside={<span className="text-xs text-muted">Flagged accounts first</span>}>
                   <div className="overflow-x-auto">
-                    <table className="listview sunken w-full bg-white text-sm">
+                    <table className="data-table w-full text-sm">
                       <thead>
                         <tr className="text-left">
                           <th className="py-2">Account</th>

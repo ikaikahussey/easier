@@ -44,8 +44,8 @@ function Example({ title, note, pledge }: (typeof EXAMPLES)[number]) {
   return (
     <Card title={title}>
       <p className="mb-3 text-sm text-muted">{note}</p>
-      <div className="sunken bg-white p-[2px]">
-        <table className="listview w-full text-sm">
+      <div className="overflow-x-auto">
+        <table className="data-table w-full text-sm">
           <thead>
             <tr className="text-left">
               <th>Task a person would do</th>
@@ -61,14 +61,14 @@ function Example({ title, note, pledge }: (typeof EXAMPLES)[number]) {
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t border-black font-bold">
-              <td>Total hours</td>
-              <td className="text-right tabular-nums">{pledge.hours}</td>
+            <tr className="font-bold">
+              <td className="border-t-2 border-ink">Total hours</td>
+              <td className="border-t-2 border-ink text-right tabular-nums">{pledge.hours}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-      <p className="mt-3 border border-black bg-accent-soft px-3 py-2 text-sm tabular-nums">
+      <p className="mt-3 border-l-4 border-shadow bg-accent-soft px-3 py-2 text-sm tabular-nums">
         {pledge.hours} hours × {formatUsdCents(pledge.hourlyWage)} = {formatUsdCents(pledge.laborValue)} of labor ×{" "}
         {RATE} = <strong>{formatUsdCents(pledge.contribution)}</strong> contributed
       </p>
@@ -80,11 +80,11 @@ export default async function LaborPledgePage() {
   const actor = await currentActor();
   return (
     <Shell actor={actor}>
-      <article className="sunken mb-6 bg-white px-5 py-6 font-serif text-[17px] leading-relaxed sm:px-10">
+      <article className="mb-10 text-[17px] leading-relaxed">
         <div className="max-w-[68ch]">
-        <h1 className="text-4xl font-bold leading-tight">The Labor Pledge</h1>
-        <p className="mt-1 text-xl italic">When AI does the work, workers still get paid in.</p>
-        <hr className="my-4 border-t-2 border-black" />
+        <h1 className="display text-[clamp(2.4rem,7vw,4.5rem)]">The Labor Pledge</h1>
+        <p className="mt-4 text-xl font-bold">When AI does the work, workers still get paid in.</p>
+        <hr className="my-5 border-t-4 border-accent" />
         <p>
           Our prices are low because AI does work that people used to be paid to do. When that work leaves a payroll, so do
           the Social Security contributions that come with it. The Labor Pledge puts that money back: on every engagement,
@@ -92,11 +92,11 @@ export default async function LaborPledgePage() {
           AI replaced.
         </p>
 
-        <section className="my-6 border-2 border-black bg-accent-soft p-5 text-center">
+        <section className="my-8 border-l-8 border-shadow bg-accent-soft p-5 text-center">
           <p className="text-2xl font-bold sm:text-3xl">
             Human hours × {formatUsdCents(LABOR_PLEDGE.hourlyWage)} × {RATE} = contribution
           </p>
-          <p className="mt-2 font-sans text-sm">Calculated for every engagement and shown on every quote.</p>
+          <p className="mt-2 text-sm">Calculated for every engagement and shown on every quote.</p>
         </section>
 
         <h2 className="mt-8 text-2xl font-bold">How each part is set</h2>
@@ -145,7 +145,7 @@ export default async function LaborPledgePage() {
         </div>
       </article>
 
-      <h2 className="mb-3 text-2xl font-bold">Worked examples</h2>
+      <h2 className="mb-4 text-2xl uppercase">Worked examples</h2>
 
       <div className="grid gap-x-5 lg:grid-cols-2">
         {EXAMPLES.map((e) => (
@@ -155,7 +155,7 @@ export default async function LaborPledgePage() {
 
       <p className="text-sm">
         <Link href="/" className={buttonClass("quiet")}>
-          &lt; Back to easier.company
+          Back to easier.company
         </Link>
       </p>
     </Shell>

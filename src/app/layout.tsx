@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import { activeTheme, themeStyle } from "@/ui/theme";
 
 export const metadata: Metadata = {
   title: "easier.company — nonprofit returns and books at flat prices",
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" style={themeStyle(activeTheme())}>
       <body className="antialiased">{children}</body>
     </html>
   );

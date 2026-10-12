@@ -12,7 +12,7 @@ export default async function Queue() {
 
   const List = ({ items, empty }: { items: typeof all; empty: string }) =>
     items.length ? (
-      <table className="listview sunken w-full bg-white text-sm">
+      <table className="data-table w-full text-sm">
         <thead>
           <tr className="text-left">
             <th className="py-2">Client</th>

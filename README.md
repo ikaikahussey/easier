@@ -49,6 +49,10 @@ Isolation is enforced in independent layers:
 5. **Application controls.** Passwordless sign-in uses single-use, hashed, 15-minute tokens consumed by POST (link scanners cannot burn them), with rate limiting. Sessions are HMAC-signed, httpOnly cookies. Responses carry a strict CSP, `frame-ancestors 'none'`, HSTS, and `no-store` on client pages. Uploads are capped at 5 MB.
 6. **AI boundary.** A model call receives only the current engagement's data. Cached AI outputs live inside that engagement's encrypted draft.
 
+## Themes
+
+All UI colors come from `src/ui/theme.ts`. Set `SITE_THEME` to `poster` (default: blue, red, gold), `teal`, or `arcade`. To add a theme, add an entry to `THEMES` with the same 15 tokens; `tests/theme.test.ts` fails the build if it misses WCAG contrast minimums.
+
 ## Running locally
 
 ```bash

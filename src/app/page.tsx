@@ -4,7 +4,7 @@ import { formatUsd, formatUsdCents } from "@/core/money";
 import { form990Labor, PRICING, TYPICAL_990 } from "@/products/form-990";
 import { LABOR_PLEDGE, pledgeFor } from "@/core/pledge";
 import { BOOKS_MONTHLY_PRICE } from "@/products/books";
-import { buttonClass, Card, Shell, Window } from "@/ui/components";
+import { buttonClass, Card, Shell } from "@/ui/components";
 import { currentActor } from "@/ui/session";
 
 const FROM: Record<string, string> = {
@@ -18,51 +18,35 @@ const RATE = `${Math.round(LABOR_PLEDGE.rate * 1000) / 10}%`;
 export default async function Home() {
   const actor = await currentActor();
   const start = actor ? "/app" : "/login";
-  return (
-    <Shell actor={actor}>
-      {/* The setup wizard: the most familiar way anyone in 1997 was walked through a hard task. */}
-      <section className="raised mb-6 p-[3px]" aria-labelledby="welcome">
-        <div className="titlebar">
-          <span>easier.company Setup</span>
-        </div>
-        <div className="grid sm:grid-cols-[190px_1fr]">
-          <div className="wizard-art flex items-end p-4 sm:min-h-[300px]">
-            <p className="font-serif text-4xl font-bold italic leading-none text-white [text-shadow:2px_2px_0_#000]">
-              easier
-              <span className="block text-base not-italic font-normal tracking-wide">.company</span>
-            </p>
-          </div>
-          <div className="flex flex-col p-5 sm:p-7">
-            <h1 id="welcome" className="text-3xl font-bold leading-tight sm:text-4xl">
-              Welcome to easier.company
-            </h1>
-            <div className="mt-4 max-w-[60ch] space-y-3 text-[15px] leading-relaxed">
-              <p>This wizard prepares your nonprofit&apos;s annual return and monthly books.</p>
-              <p>
-                Software does the preparation. A licensed professional reviews and signs every return. You pay a published
-                flat price, a fraction of what a traditional firm charges.
-              </p>
-              <p>To continue, click Next.</p>
-            </div>
-            <div className="mt-auto pt-5">
-              <hr className="etched mb-3" />
-            </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Link href="/labor-pledge" className={buttonClass("quiet")}>
-                Labor Pledge
-              </Link>
-              <Link href={start} className={buttonClass("primary")}>
-                Next &gt;
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
+  const hero = (
+    <section className="mx-auto max-w-6xl px-4 pb-12 pt-6 sm:pt-10" aria-labelledby="hero">
+      <h1 id="hero" className="display text-[clamp(2.6rem,9vw,6.5rem)]">
+        Nonprofit taxes,
+        <br />
+        made easier.
+      </h1>
+      <p className="kicker mt-6 text-sm sm:text-base">Form 990 • Monthly books • Flat prices</p>
+      <p className="mt-4 max-w-[60ch] text-[17px] text-on-bg">
+        Software prepares your nonprofit&apos;s annual return and monthly books. A licensed professional reviews and signs
+        every return. You pay a published flat price, a fraction of what a traditional firm charges.
+      </p>
+      <div className="mt-7 flex flex-wrap items-center gap-5">
+        <Link href={start} className={buttonClass("primary")}>
+          Start your return
+        </Link>
+        <Link href="/labor-pledge" className="nav-link underline!">
+          Read the Labor Pledge
+        </Link>
+      </div>
+    </section>
+  );
 
-      <div className="grid gap-x-5 md:grid-cols-2">
+  return (
+    <Shell actor={actor} hero={hero}>
+      <div className="grid gap-x-6 md:grid-cols-2">
         {PRODUCTS.map((p) => (
           <Card key={p.slug} title={`${p.line}${p.status === "beta" ? " (beta)" : ""}`}>
-            <h2 className="text-2xl font-bold">{p.name}</h2>
+            <h2 className="text-2xl">{p.name}</h2>
             <p className="mt-2 text-sm">{p.tagline}</p>
             <p className="mt-3 text-sm font-bold">{FROM[p.slug]}</p>
             <p className="mt-1 text-xs text-muted">Signed by: {p.reviewerCredentials.join(", ")}</p>
@@ -70,24 +54,21 @@ export default async function Home() {
         ))}
       </div>
 
-      <Window title="LABOR.TXT - Notepad" className="mb-6">
-        <div className="sunken bg-white p-4 font-mono text-[14px] leading-relaxed">
-          <p className="font-bold">THE LABOR PLEDGE</p>
-          <p className="mt-3 max-w-[72ch]">
-            When software does work people used to be paid for, the Social Security contributions on that work disappear.
-            We put them back. For every engagement we estimate the hours a person would have spent, value them at a
-            living wage of {formatUsdCents(LABOR_PLEDGE.hourlyWage)} an hour, and contribute {RATE} to{" "}
-            {LABOR_PLEDGE.recipient}. It comes out of our fee, not on top of it.
-          </p>
-          <p className="mt-3">
-            A typical Form 990: {EXAMPLE.hours} hours × {formatUsdCents(EXAMPLE.hourlyWage)} × {RATE} ={" "}
-            {formatUsdCents(EXAMPLE.contribution)}
-          </p>
-          <p className="mt-3">
-            <Link href="/labor-pledge">How we calculate it</Link>
-          </p>
-        </div>
-      </Window>
+      <Card title="The Labor Pledge">
+        <p className="max-w-[72ch] text-[15px]">
+          When software does work people used to be paid for, the Social Security contributions on that work disappear. We
+          put them back. For every engagement we estimate the hours a person would have spent, value them at a living wage
+          of {formatUsdCents(LABOR_PLEDGE.hourlyWage)} an hour, and contribute {RATE} to {LABOR_PLEDGE.recipient}. It comes
+          out of our fee, not on top of it.
+        </p>
+        <p className="mt-4 inline-block border-l-4 border-shadow bg-accent-soft px-3 py-2 text-sm font-bold tabular-nums">
+          A typical Form 990: {EXAMPLE.hours} hours × {formatUsdCents(EXAMPLE.hourlyWage)} × {RATE} ={" "}
+          {formatUsdCents(EXAMPLE.contribution)}
+        </p>
+        <p className="mt-4 text-sm">
+          <Link href="/labor-pledge">How we calculate it</Link>
+        </p>
+      </Card>
 
       <Card title="How it works">
         <ol className="list-decimal space-y-2 pl-6 text-sm">
