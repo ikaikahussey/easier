@@ -18,8 +18,8 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
   return (
     <div className="min-h-screen">
       <header className="no-print mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-5">
-        <Link href="/" className="display text-2xl no-underline! sm:text-3xl" aria-label="easier.company home">
-          easier.company
+        <Link href="/" className="display flat text-2xl no-underline! sm:text-3xl" aria-label="easier.company home">
+          <span className="pop">easier</span>.company
         </Link>
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="Main">
           <Link href="/labor-pledge" className="nav-link">

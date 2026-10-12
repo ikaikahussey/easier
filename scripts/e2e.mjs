@@ -131,7 +131,7 @@ async function main() {
   const anon = new Browser();
   const home = await anon.get("/");
   assert.equal(home.status, 200);
-  assert.match(text(home), /Nonprofit taxes,\s*made easier\./);
+  assert.match(text(home), /Nonprofit and small business chores,\s*made easier\./);
   assert.match(text(home), /The Labor Pledge/);
   // Every control-looking element must do something: no decorative window buttons or status text.
   assert.doesNotMatch(home.html, /titlebar-buttons|>Ready</);

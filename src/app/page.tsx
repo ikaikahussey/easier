@@ -20,10 +20,10 @@ export default async function Home() {
   const start = actor ? "/app" : "/login";
   const hero = (
     <section className="mx-auto max-w-6xl px-4 pb-12 pt-6 sm:pt-10" aria-labelledby="hero">
-      <h1 id="hero" className="display text-[clamp(2.6rem,9vw,6.5rem)]">
-        Nonprofit taxes,
+      <h1 id="hero" className="display flat text-[clamp(2.2rem,7vw,5.5rem)]">
+        Nonprofit and small business chores,
         <br />
-        made easier.
+        made <span className="pop">easier</span>.
       </h1>
       <p className="kicker mt-6 text-sm sm:text-base">Form 990 • Monthly books • Flat prices</p>
       <p className="mt-4 max-w-[60ch] text-[17px] text-on-bg">

@@ -74,6 +74,14 @@ a:hover {
   line-height: 0.95;
 }
 
+/* Display type with the shadow only on marked words: <h1 class="display flat">… <span class="pop">easier</span></h1> */
+.display.flat {
+  text-shadow: none;
+}
+.display.flat .pop {
+  text-shadow: 0.055em 0.055em 0 var(--t-shadow);
+}
+
 /* Spaced caps for short labels on blue. */
 .kicker {
   font-weight: 700;
