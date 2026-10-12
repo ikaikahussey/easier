@@ -96,23 +96,78 @@ const Headline = () => (
   </h1>
 );
 
+/** What the platform will cover. Teaser copy only: no prices or dates until each product ships. */
+const COMING: { area: string; items: string[] }[] = [
+  { area: "Taxes", items: ["Nonprofit annual returns (Form 990)", "Quarterly estimates", "Business and personal returns"] },
+  { area: "Books", items: ["Monthly close and reconciliation", "Board-ready financial statements", "Year-end cleanup"] },
+  { area: "Audits", items: ["Audit preparation", "Annual nonprofit audits", "Grant and funder reporting"] },
+  { area: "Securities", items: ["Private offering paperwork", "Exempt-offering filings", "Ongoing investor compliance"] },
+  { area: "Legal", items: ["Formation and governance documents", "Contracts and policies", "The paperwork you'd otherwise buy a manual for"] },
+  { area: "Fundraising", items: ["Campaign feasibility and capacity studies", "Donor research", "Grant applications"] },
+];
+
+const PROMISES: [string, string][] = [
+  ["Flat prices, published", "You see the price before you start. No hourly billing."],
+  ["A professional signs", "Software prepares the work. A licensed professional reviews and signs every deliverable."],
+  ["Your data, walled off", "Each client's records are encrypted with their own key and kept separate from everyone else's."],
+  ["Workers paid in", "On every job, we pay Social Security contributions on the hours the software saves, toward worker retirement."],
+];
+
 /** Public pre-launch page. Everything else requires an invited sign-in. */
 function Teaser({ joined, error }: { joined?: string; error?: string }) {
   const hero = (
     <section className="mx-auto max-w-6xl px-4 pb-12 pt-6 sm:pt-10" aria-labelledby="hero">
       <Headline />
       <p className="kicker mt-6 text-sm sm:text-base">Coming soon</p>
-      <p className="mt-4 max-w-[56ch] text-[17px] text-on-bg">
-        Software does the work. A licensed professional checks and signs it. You pay a flat price, published up front. And a
-        share of every fee goes back to the workers whose hours the software saves.
+      <p className="mt-4 max-w-[58ch] text-[17px] text-on-bg">
+        The work you would hire a firm for, at a price that makes sense for a small organization. Taxes, books, audits,
+        securities filings, legal paperwork, and fundraising studies: prepared by software, checked and signed by a licensed
+        professional, for a flat fee you see up front.
+      </p>
+      <p className="mt-7">
+        <a href="#waitlist" className={buttonClass("primary")}>
+          Join the waitlist
+        </a>
       </p>
     </section>
   );
   return (
     <Shell hero={hero}>
-      <section id="waitlist" className="mx-auto max-w-xl scroll-mt-6">
+      <section aria-labelledby="coming">
+        <h2 id="coming" className="text-2xl uppercase">What&apos;s coming</h2>
+        <p className="mt-1 max-w-[62ch] text-sm text-muted">
+          One firm for the back office. We start with nonprofit returns and books, then add each service as it is ready.
+        </p>
+        <div className="mt-5 grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+          {COMING.map((c) => (
+            <div key={c.area} className="border-t-4 border-accent pt-3">
+              <h3 className="text-lg uppercase tracking-wide">{c.area}</h3>
+              <ul className="mt-1 space-y-0.5 text-sm">
+                {c.items.map((i) => (
+                  <li key={i}>{i}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="promises" className="mt-10 border-l-8 border-shadow bg-accent-soft p-5 sm:p-6">
+        <h2 id="promises" className="text-2xl uppercase">Every service, the same terms</h2>
+        <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2">
+          {PROMISES.map(([t, d]) => (
+            <div key={t}>
+              <dt className="font-bold">{t}</dt>
+              <dd className="text-sm">{d}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section id="waitlist" className="mx-auto mt-10 max-w-xl scroll-mt-6">
         <Notice error={error} success={joined ? "You're on the list. We'll email you when we open." : undefined} />
         <Card title="Join the waitlist">
+          <p className="mb-4 text-sm">Get early access when we open, starting with nonprofits.</p>
           <form action={joinWaitlistAction} className="space-y-4">
             <label className="block">
               <span className="mb-1 block text-sm font-bold">Email</span>

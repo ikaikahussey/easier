@@ -135,6 +135,9 @@ async function main() {
   assert.equal(home.status, 200);
   assert.match(text(home), /Nonprofit and small business chores,\s*made easier\./);
   assert.match(text(home), /Join the waitlist/);
+  for (const area of ["Taxes", "Books", "Audits", "Securities", "Legal", "Fundraising"]) assert.match(text(home), new RegExp(area));
+  assert.match(home.html, /href="#waitlist"/);
+  assert.ok(home.doc.querySelector("#waitlist"), "waitlist anchor target missing");
   assert.doesNotMatch(text(home), /Labor Pledge|\$23\.08|Form 990 preparation|\$1,950/);
   assert.doesNotMatch(home.html, /href="\/labor-pledge"/);
   // Every control-looking element must do something: no decorative window buttons or status text.
