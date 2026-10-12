@@ -1,7 +1,7 @@
 import { and, count, eq, gt, isNull } from "drizzle-orm";
 import { randomToken, sha256, sign, verify } from "../crypto";
 import { withSystem } from "../db/client";
-import { loginTokens, users } from "../db/schema";
+import { loginTokens, users, waitlist } from "../db/schema";
 import type { Role } from "../workflow";
 import { ValidationError, type Actor } from "./context";
 
@@ -19,23 +19,49 @@ function configuredRole(email: string): Role | undefined {
   return undefined;
 }
 
+/**
+ * Before launch, sign-in is invite-only (SITE_ACCESS=invite, the default): staff, emails in
+ * ACCESS_EMAILS, and existing users. Set SITE_ACCESS=open at launch.
+ */
+export const siteIsOpen = () => process.env.SITE_ACCESS === "open";
+
+export type WaitlistKind = (typeof waitlist.$inferInsert)["kind"];
+
+/** Adds an email to the launch waitlist. Repeat signups are ignored. */
+export async function joinWaitlist(rawEmail: string, kind: WaitlistKind = "other"): Promise<void> {
+  const email = normalizeEmail(rawEmail);
+  if (!EMAIL.test(email)) throw new ValidationError(["Enter a valid email address"]);
+  const k = kind === "nonprofit" || kind === "small_business" ? kind : "other";
+  await withSystem((tx) => tx.insert(waitlist).values({ email, kind: k }).onConflictDoNothing());
+}
+
 const normalizeEmail = (e: string) => e.trim().toLowerCase();
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Issue a single-use sign-in token. Only its hash is stored. */
-export async function requestLogin(rawEmail: string): Promise<string> {
+/**
+ * Issue a single-use sign-in token. Only its hash is stored. Returns undefined when the site
+ * is invite-only and this email has no access; the email is added to the waitlist instead.
+ */
+export async function requestLogin(rawEmail: string): Promise<string | undefined> {
   const email = normalizeEmail(rawEmail);
   if (!EMAIL.test(email)) throw new ValidationError(["Enter a valid email address"]);
   const token = randomToken();
-  await withSystem(async (tx) => {
+  return withSystem(async (tx) => {
+    if (!siteIsOpen() && !configuredRole(email) && !emailList(process.env.ACCESS_EMAILS).has(email)) {
+      const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
+      if (!existing) {
+        await tx.insert(waitlist).values({ email }).onConflictDoNothing();
+        return undefined;
+      }
+    }
     const [{ n }] = (await tx
       .select({ n: count() })
       .from(loginTokens)
       .where(and(eq(loginTokens.email, email), gt(loginTokens.createdAt, new Date(Date.now() - 3600_000))))) as [{ n: number }];
     if (n >= MAX_TOKENS_PER_HOUR) throw new ValidationError(["Too many sign-in requests; try again later"]);
     await tx.insert(loginTokens).values({ tokenHash: sha256(token), email, expiresAt: new Date(Date.now() + TOKEN_TTL_MS) });
+    return token;
   });
-  return token;
 }
 
 export async function consumeLogin(token: string): Promise<Actor | undefined> {

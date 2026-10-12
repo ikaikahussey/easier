@@ -39,6 +39,13 @@ export const loginTokens = pgTable("login_tokens", {
   createdAt: createdAt(),
 });
 
+/** Launch waitlist. System access only: the restricted app role has no grant on this table. */
+export const waitlist = pgTable("waitlist", {
+  email: text("email").primaryKey(),
+  kind: text("kind", { enum: ["nonprofit", "small_business", "other"] }).notNull().default("other"),
+  createdAt: createdAt(),
+});
+
 export const organizations = pgTable("organizations", {
   id: id(),
   name: text("name").notNull(),

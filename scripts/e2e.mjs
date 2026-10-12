@@ -30,6 +30,8 @@ const server = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", 
     MAIL_TRANSPORT: "log",
     APP_URL: BASE,
     REVIEWER_EMAILS: "rita@easier.company",
+    ACCESS_EMAILS: "alice@a.org,bob@b.org",
+    SITE_ACCESS: "",
     SESSION_SECRET: "e2e-session-secret-0123456789abcdefghij",
     DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
   },
@@ -110,7 +112,7 @@ async function signIn(email) {
   const login = await b.get("/login");
   const before = log.length;
   const sent = await b.submit(login, (f) => !!f.querySelector("input[name=email]"), { email });
-  assert.match(sent.html, /Check your email/);
+  assert.match(sent.html, /sign-in link is on its way/);
   await sleep(200);
   const link = log.slice(before).match(/Sign-in link for \S+: (\S+)/)?.[1];
   assert.ok(link, "sign-in link was not logged");
@@ -127,30 +129,46 @@ async function main() {
   for (let i = 0; i < 60 && !log.includes("Ready"); i++) await sleep(500);
   assert.ok(log.includes("Ready"), `server did not start:\n${log}`);
 
-  // Public pages and headers
+  // Public teaser: headline and waitlist only; everything else needs a sign-in.
   const anon = new Browser();
   const home = await anon.get("/");
   assert.equal(home.status, 200);
   assert.match(text(home), /Nonprofit and small business chores,\s*made easier\./);
-  assert.match(text(home), /The Labor Pledge/);
+  assert.match(text(home), /Join the waitlist/);
+  assert.doesNotMatch(text(home), /Labor Pledge|\$23\.08|Form 990 preparation|\$1,950/);
+  assert.doesNotMatch(home.html, /href="\/labor-pledge"/);
   // Every control-looking element must do something: no decorative window buttons or status text.
   assert.doesNotMatch(home.html, /titlebar-buttons|>Ready</);
   for (const el of home.doc.querySelectorAll(".btn")) assert.ok(el.getAttribute("href") || el.tagName === "BUTTON", "inert .btn");
-  assert.match(text(home), /hours × \$23\.08 × 12\.4% = \$\d+\.\d\d/);
-  assert.match(home.html, /href="\/labor-pledge"/);
-  const pledgePage = await anon.get("/labor-pledge");
-  assert.equal(pledgePage.status, 200);
-  assert.match(text(pledgePage), /Human hours × \$23\.08 × 12\.4% = contribution/);
-  assert.match(text(pledgePage), /Monthly close/);
-  assert.match(text(pledgePage), /17\.85 hours × \$23\.08 = \$411\.98 of labor × 12\.4% = \$51\.09 contributed/);
   assert.equal(home.headers.get("x-frame-options"), "DENY");
   assert.match(home.headers.get("content-security-policy"), /frame-ancestors 'none'/);
-  const gated = await anon.get("/app");
-  assert.match(gated.url, /\/login$/);
+  for (const p of ["/labor-pledge", "/app", "/review"]) assert.match((await anon.get(p)).url, /\/login$/, `${p} is not gated`);
+
+  const joined = await anon.submit(home, (f) => !!f.querySelector("select[name=kind]"), { email: "Owner@Shop.com", kind: "small_business" });
+  assert.match(text(joined), /You're on the list/);
+  const badJoin = await anon.submit(home, (f) => !!f.querySelector("select[name=kind]"), { email: "nope", kind: "nonprofit" });
+  assert.match(text(badJoin), /Enter a valid email address/);
+
+  // Uninvited sign-in: same message, no link issued.
+  const stranger = new Browser();
+  const before = log.length;
+  const strangerSent = await stranger.submit(await stranger.get("/login"), (f) => !!f.querySelector("input[name=email]"), { email: "stranger@x.org" });
+  assert.match(strangerSent.html, /sign-in link is on its way/);
+  await sleep(200);
+  assert.doesNotMatch(log.slice(before), /Sign-in link for stranger@x\.org/);
 
   // Client A: organization, intake, upload, submit
   const { b: alice, landing } = await signIn("alice@a.org");
   assert.match(landing.url, /\/app$/);
+  const full = await alice.get("/");
+  assert.match(text(full), /The Labor Pledge/);
+  assert.match(text(full), /hours × \$23\.08 × 12\.4% = \$\d+\.\d\d/);
+  assert.match(full.html, /href="\/labor-pledge"/);
+  const pledgePage = await alice.get("/labor-pledge");
+  assert.equal(pledgePage.status, 200);
+  assert.match(text(pledgePage), /Human hours × \$23\.08 × 12\.4% = contribution/);
+  assert.match(text(pledgePage), /Monthly close/);
+  assert.match(text(pledgePage), /17\.85 hours × \$23\.08 = \$411\.98 of labor × 12\.4% = \$51\.09 contributed/);
   let page = await alice.submit(landing, (f) => !!f.querySelector("input[name=website]"), { name: "Kōkua Learning Center" });
   const start = page.doc.querySelectorAll("a").find((a) => /product=form-990/.test(a.getAttribute("href") ?? ""));
   assert.ok(start, "start link missing");

@@ -22,11 +22,11 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
           <span className="pop">easier</span>.company
         </Link>
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="Main">
-          <Link href="/labor-pledge" className="nav-link">
-            Labor Pledge
-          </Link>
           {actor ? (
             <>
+              <Link href="/labor-pledge" className="nav-link">
+                Labor Pledge
+              </Link>
               <Link href={staff ? "/review" : "/app"} className="nav-link">
                 {staff ? "Review queue" : "Your organizations"}
               </Link>
@@ -37,7 +37,7 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
               </form>
             </>
           ) : (
-            <Link href="/login" className={buttonClass("primary")}>
+            <Link href="/login" className={buttonClass("quiet")}>
               Sign in
             </Link>
           )}
@@ -45,14 +45,16 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
       </header>
       {hero}
       <main className="sheet mx-auto max-w-6xl px-4 py-8 sm:px-8">{children}</main>
-      <footer className="no-print mx-auto flex max-w-6xl flex-wrap gap-x-6 gap-y-2 px-4 py-6">
-        <Link href="/" className="nav-link">
-          Home
-        </Link>
-        <Link href="/labor-pledge" className="nav-link">
-          Labor Pledge
-        </Link>
-      </footer>
+      {actor && (
+        <footer className="no-print mx-auto flex max-w-6xl flex-wrap gap-x-6 gap-y-2 px-4 py-6">
+          <Link href="/" className="nav-link">
+            Home
+          </Link>
+          <Link href="/labor-pledge" className="nav-link">
+            Labor Pledge
+          </Link>
+        </footer>
+      )}
     </div>
   );
 }

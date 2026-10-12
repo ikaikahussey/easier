@@ -49,6 +49,10 @@ Isolation is enforced in independent layers:
 5. **Application controls.** Passwordless sign-in uses single-use, hashed, 15-minute tokens consumed by POST (link scanners cannot burn them), with rate limiting. Sessions are HMAC-signed, httpOnly cookies. Responses carry a strict CSP, `frame-ancestors 'none'`, HSTS, and `no-store` on client pages. Uploads are capped at 5 MB.
 6. **AI boundary.** A model call receives only the current engagement's data. Cached AI outputs live inside that engagement's encrypted draft.
 
+## Pre-launch access
+
+Until launch, the public sees only a teaser at `/` with a waitlist form. Everything else requires sign-in, and sign-in is invitation-only: staff (`ADMIN_EMAILS`, `REVIEWER_EMAILS`), emails in `ACCESS_EMAILS` (comma-separated), and existing users. Anyone else who requests a sign-in link is added to the waitlist and gets the same on-screen message, so the form does not reveal who has access. Waitlist rows live in the `waitlist` table, readable only by server code. Set `SITE_ACCESS=open` at launch to let anyone sign in.
+
 ## Themes
 
 All UI colors come from `src/ui/theme.ts`. Set `SITE_THEME` to `poster` (default: blue, red, gold), `teal`, or `arcade`. To add a theme, add an entry to `THEMES` with the same 15 tokens; `tests/theme.test.ts` fails the build if it misses WCAG contrast minimums.

@@ -4,7 +4,8 @@ import { formatUsd, formatUsdCents } from "@/core/money";
 import { form990Labor, PRICING, TYPICAL_990 } from "@/products/form-990";
 import { LABOR_PLEDGE, pledgeFor } from "@/core/pledge";
 import { BOOKS_MONTHLY_PRICE } from "@/products/books";
-import { buttonClass, Card, Shell } from "@/ui/components";
+import { joinWaitlistAction } from "@/app/actions";
+import { Button, buttonClass, Card, inputClass, Notice, Shell } from "@/ui/components";
 import { currentActor } from "@/ui/session";
 
 const FROM: Record<string, string> = {
@@ -15,16 +16,13 @@ const FROM: Record<string, string> = {
 const EXAMPLE = pledgeFor(form990Labor(TYPICAL_990));
 const RATE = `${Math.round(LABOR_PLEDGE.rate * 1000) / 10}%`;
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ joined?: string; error?: string }> }) {
   const actor = await currentActor();
-  const start = actor ? "/app" : "/login";
+  if (!actor) return <Teaser {...await searchParams} />;
+  const start = "/app";
   const hero = (
     <section className="mx-auto max-w-6xl px-4 pb-12 pt-6 sm:pt-10" aria-labelledby="hero">
-      <h1 id="hero" className="display flat text-[clamp(2.2rem,7vw,5.5rem)]">
-        Nonprofit and small business chores,
-        <br />
-        made <span className="pop">easier</span>.
-      </h1>
+      <Headline />
       <p className="kicker mt-6 text-sm sm:text-base">Form 990 • Monthly books • Flat prices</p>
       <p className="mt-4 max-w-[60ch] text-[17px] text-on-bg">
         Software prepares your nonprofit&apos;s annual return and monthly books. A licensed professional reviews and signs
@@ -86,6 +84,55 @@ export default async function Home() {
           </li>
         </ol>
       </Card>
+    </Shell>
+  );
+}
+
+const Headline = () => (
+  <h1 id="hero" className="display flat text-[clamp(2.2rem,7vw,5.5rem)]">
+    Nonprofit and small business chores,
+    <br />
+    made <span className="pop">easier</span>.
+  </h1>
+);
+
+/** Public pre-launch page. Everything else requires an invited sign-in. */
+function Teaser({ joined, error }: { joined?: string; error?: string }) {
+  const hero = (
+    <section className="mx-auto max-w-6xl px-4 pb-12 pt-6 sm:pt-10" aria-labelledby="hero">
+      <Headline />
+      <p className="kicker mt-6 text-sm sm:text-base">Coming soon</p>
+      <p className="mt-4 max-w-[56ch] text-[17px] text-on-bg">
+        Software does the work. A licensed professional checks and signs it. You pay a flat price, published up front. And a
+        share of every fee goes back to the workers whose hours the software saves.
+      </p>
+    </section>
+  );
+  return (
+    <Shell hero={hero}>
+      <section id="waitlist" className="mx-auto max-w-xl scroll-mt-6">
+        <Notice error={error} success={joined ? "You're on the list. We'll email you when we open." : undefined} />
+        <Card title="Join the waitlist">
+          <form action={joinWaitlistAction} className="space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-bold">Email</span>
+              <input name="email" type="email" required autoComplete="email" className={inputClass} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-bold">I run a</span>
+              <select name="kind" className={inputClass} defaultValue="nonprofit">
+                <option value="nonprofit">Nonprofit</option>
+                <option value="small_business">Small business</option>
+                <option value="other">Something else</option>
+              </select>
+            </label>
+            <Button type="submit">Join the waitlist</Button>
+          </form>
+        </Card>
+        <p className="text-sm">
+          Have an invitation? <Link href="/login">Sign in</Link>
+        </p>
+      </section>
     </Shell>
   );
 }

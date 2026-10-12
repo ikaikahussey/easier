@@ -13,7 +13,7 @@ import {
   uploadDocument,
 } from "@/core/services/engagements";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/core/services/context";
-import { consumeLogin, createSessionToken, readSessionToken, requestLogin } from "@/core/services/auth";
+import { consumeLogin, createSessionToken, joinWaitlist, readSessionToken, requestLogin } from "@/core/services/auth";
 import { OrgVault, unwrapKey } from "@/core/crypto";
 import type { Form990Data } from "@/products/form-990";
 import { csv, intake990 } from "./fixtures";
@@ -220,13 +220,42 @@ describe("tenant isolation", () => {
 describe("authentication", () => {
   it("issues single-use, hashed sign-in tokens and assigns staff roles from config", async () => {
     process.env.REVIEWER_EMAILS = "new.reviewer@easier.company";
-    const token = await requestLogin("New.Reviewer@Easier.company ");
+    const token = (await requestLogin("New.Reviewer@Easier.company "))!;
+    expect(token).toBeTruthy();
     const stored = await withSystem((tx) => tx.select().from(schema.loginTokens));
     expect(stored.some((t) => t.tokenHash === token)).toBe(false);
     const actor = await consumeLogin(token);
     expect(actor).toMatchObject({ email: "new.reviewer@easier.company", role: "reviewer" });
     expect(await consumeLogin(token)).toBeUndefined();
     expect(await consumeLogin("nonsense")).toBeUndefined();
+  });
+
+  it("is invite-only before launch: unknown emails join the waitlist instead of getting a link", async () => {
+    delete process.env.SITE_ACCESS;
+    process.env.ACCESS_EMAILS = "invited@x.org";
+    expect(await requestLogin("stranger@x.org")).toBeUndefined();
+    expect(await requestLogin("invited@x.org")).toBeTruthy();
+    expect(await requestLogin("alice@a.org")).toBeTruthy(); // existing user
+    const rows = await withSystem((tx) => tx.select().from(schema.waitlist));
+    expect(rows.map((r) => r.email)).toEqual(["stranger@x.org"]);
+    const tokens = await withSystem((tx) => tx.select().from(schema.loginTokens).where(eq(schema.loginTokens.email, "stranger@x.org")));
+    expect(tokens).toHaveLength(0);
+    process.env.SITE_ACCESS = "open";
+    expect(await requestLogin("stranger@x.org")).toBeTruthy();
+  });
+
+  it("records waitlist signups once, with a valid kind", async () => {
+    await joinWaitlist(" Owner@Shop.com ", "small_business");
+    await joinWaitlist("owner@shop.com", "nonprofit");
+    await joinWaitlist("odd@x.org", "bogus" as never);
+    await expect(joinWaitlist("not-an-email")).rejects.toBeInstanceOf(ValidationError);
+    const rows = await withSystem((tx) => tx.select().from(schema.waitlist).where(sql`email in ('owner@shop.com','odd@x.org')`));
+    expect(Object.fromEntries(rows.map((r) => [r.email, r.kind]))).toEqual({ "owner@shop.com": "small_business", "odd@x.org": "other" });
+  });
+
+  it("app role cannot read the waitlist", async () => {
+    const err = await withTenant({ userId: alice.id, staff: true }, (tx) => tx.select().from(schema.waitlist)).catch((e: Error) => e);
+    expect(String((err as Error & { cause?: unknown }).cause)).toMatch(/permission denied/);
   });
 
   it("rate-limits sign-in requests", async () => {

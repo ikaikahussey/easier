@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { parseForm } from "@/core/fields";
-import { consumeLogin, requestLogin, sendLoginLink } from "@/core/services/auth";
+import { consumeLogin, joinWaitlist, requestLogin, sendLoginLink, type WaitlistKind } from "@/core/services/auth";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/core/services/context";
 import { claim, createEngagement, saveReview, transition, uploadDocument, MAX_UPLOAD_BYTES } from "@/core/services/engagements";
 import { createOrganization } from "@/core/services/organizations";
@@ -44,6 +44,7 @@ export async function requestLoginAction(fd: FormData) {
   await attempt("/login", async () => {
     const email = str(fd, "email");
     const token = await requestLogin(email);
+    if (!token) return "/login?sent=1"; // Same response either way: no hint about who has access.
     const host =
       process.env.VERCEL_ENV === "production"
         ? process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -51,6 +52,13 @@ export async function requestLoginAction(fd: FormData) {
     const base = process.env.APP_URL || (host ? `https://${host}` : "http://localhost:3000");
     await sendLoginLink(email.trim().toLowerCase(), `${base}/auth/verify?token=${encodeURIComponent(token)}`);
     return "/login?sent=1";
+  });
+}
+
+export async function joinWaitlistAction(fd: FormData) {
+  await attempt("/", async () => {
+    await joinWaitlist(str(fd, "email"), str(fd, "kind") as WaitlistKind);
+    return "/?joined=1#waitlist";
   });
 }
 

@@ -5,7 +5,7 @@ import { LABOR_PLEDGE, pledgeFor, type PledgeTerms } from "@/core/pledge";
 import { booksLabor, TYPICAL_BOOKS_ACCOUNTS } from "@/products/books";
 import { form990Labor, TYPICAL_990 } from "@/products/form-990";
 import { buttonClass, Card, Shell } from "@/ui/components";
-import { currentActor } from "@/ui/session";
+import { requireActor } from "@/ui/session";
 
 export const metadata: Metadata = {
   title: "The Labor Pledge — easier.company",
@@ -77,7 +77,7 @@ function Example({ title, note, pledge }: (typeof EXAMPLES)[number]) {
 }
 
 export default async function LaborPledgePage() {
-  const actor = await currentActor();
+  const actor = await requireActor();
   return (
     <Shell actor={actor}>
       <article className="mb-10 text-[17px] leading-relaxed">
