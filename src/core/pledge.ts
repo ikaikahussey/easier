@@ -1,14 +1,14 @@
 import type { Cents } from "./money";
 
 /**
- * The Labor Pledge. For every engagement, Plainfirm estimates how many hours a human
+ * The Labor Pledge. For every engagement, easier.company estimates how many hours a human
  * professional would have spent doing the work the AI did, values those hours at a
  * living wage, and voluntarily contributes the Social Security payroll tax on that value
  * toward worker retirement:
  *
  *   contribution = estimated human hours × living wage × 12.4%
  *
- * The contribution is paid out of Plainfirm's fee, never added to it.
+ * The contribution is paid out of easier.company's fee, never added to it.
  */
 const envCents = (v: string | undefined, fallback: Cents): Cents => {
   const n = Number(v);

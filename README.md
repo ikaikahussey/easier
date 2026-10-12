@@ -1,14 +1,14 @@
-# Plainfirm
+# easier.company
 
 Firm-grade professional services at plain prices. AI prepares the work, a licensed professional reviews and signs it, and the client pays a published flat fee.
 
-The first products are **Form 990 preparation** (Plainfirm Tax) and **monthly nonprofit close** (Plainfirm Books, formerly Augmented Accountants).
+The first products are **Form 990 preparation** (Easier Tax) and **monthly nonprofit close** (Easier Books, formerly Augmented Accountants).
 
 ## Business model
 
 - **Flat, published prices**, set at roughly one-third to one-half of what a traditional firm charges (`PRICING` in each product module).
 - **Human sign-off on every deliverable.** Each product declares which credentials may approve it (`reviewerCredentials`). Approval is blocked while any must-fix finding remains.
-- **The Labor Pledge.** For every engagement, the platform estimates how many hours a human professional would have spent on the work, task by task, from the actual workload (accounts classified, expense lines allocated, programs written up, officers listed, schedules prepared). Plainfirm values those hours at a living wage and voluntarily contributes 12.4%, the combined Social Security (OASDI) payroll tax rate, to worker retirement: `contribution = hours × living wage × 12.4%`. The living wage is $23.08/hour, the unweighted average of the 50 states and D.C. for one working adult in the MIT Living Wage Calculator (2025); override with `LIVING_WAGE_HOURLY_CENTS`. The contribution comes out of Plainfirm's fee, not on top of it. Every quote shows the hours, the task breakdown, and the amount. See `src/core/pledge.ts` and each product's `labor` function.
+- **The Labor Pledge.** For every engagement, the platform estimates how many hours a human professional would have spent on the work, task by task, from the actual workload (accounts classified, expense lines allocated, programs written up, officers listed, schedules prepared). easier.company values those hours at a living wage and voluntarily contributes 12.4%, the combined Social Security (OASDI) payroll tax rate, to worker retirement: `contribution = hours × living wage × 12.4%`. The living wage is $23.08/hour, the unweighted average of the 50 states and D.C. for one working adult in the MIT Living Wage Calculator (2025); override with `LIVING_WAGE_HOURLY_CENTS`. The contribution comes out of easier.company's fee, not on top of it. Every quote shows the hours, the task breakdown, and the amount. See `src/core/pledge.ts` and each product's `labor` function.
   - Benchmarks (`BENCHMARK`, `BOOKS_MONTHLY_BENCHMARK`) are placeholder estimates. Replace them with a documented market survey before publishing.
   - Set `PLEDGE_RECIPIENT` to the fund that receives contributions.
 
@@ -42,7 +42,7 @@ drizzle/             SQL migrations, including 0001_tenant_isolation.sql (RLS)
 
 Isolation is enforced in independent layers:
 
-1. **Postgres row-level security.** Client-data queries run as the non-owner `plainfirm_app` role, with the user set per transaction. Tenancy derives from the `memberships` table, never from a request parameter. A query with no `WHERE` clause still returns only the caller's rows. Staff identity is honored only if the `users` table confirms the role.
+1. **Postgres row-level security.** Client-data queries run as the non-owner `easier_app` role, with the user set per transaction. Tenancy derives from the `memberships` table, never from a request parameter. A query with no `WHERE` clause still returns only the caller's rows. Staff identity is honored only if the `users` table confirms the role.
 2. **Composite foreign keys** force every document, draft, and event to carry the same `org_id` as its engagement.
 3. **Per-client encryption.** Each organization has its own AES-256 data key, wrapped by `DATA_ENCRYPTION_KEY`. Intake, uploaded files, parsed data, drafts, overrides, and audit payloads are sealed with AES-256-GCM and bound to org and record IDs. Ciphertext moved to another tenant or record will not decrypt. Destroying an org's key (`destroyOrganizationKey`) makes its data unrecoverable.
 4. **Assignment-gated staff access.** Reviewers see queue metadata. They can read content, and the org key, only for engagements assigned to them. Every staff view is written to the client-visible audit trail.

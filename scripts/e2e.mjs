@@ -15,7 +15,7 @@ import { parse } from "node-html-parser";
 const PORT = 3100;
 const BASE = `http://localhost:${PORT}`;
 const root = path.resolve(import.meta.dirname, "..");
-const dbDir = mkdtempSync(path.join(tmpdir(), "plainfirm-e2e-"));
+const dbDir = mkdtempSync(path.join(tmpdir(), "easier-e2e-"));
 let log = "";
 
 const server = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", String(PORT)], {
@@ -29,7 +29,7 @@ const server = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", 
     ANTHROPIC_API_KEY: "",
     MAIL_TRANSPORT: "log",
     APP_URL: BASE,
-    REVIEWER_EMAILS: "rita@plainfirm.com",
+    REVIEWER_EMAILS: "rita@easier.company",
     SESSION_SECRET: "e2e-session-secret-0123456789abcdefghij",
     DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
   },
@@ -116,7 +116,7 @@ async function signIn(email) {
   assert.ok(link, "sign-in link was not logged");
   const verify = await b.get(link);
   const after = await b.submit(verify, (f) => !!f.querySelector("input[name=token]"));
-  assert.ok(b.cookie.startsWith("pf_session="), "no session cookie");
+  assert.ok(b.cookie.startsWith("ec_session="), "no session cookie");
   return { b, landing: after };
 }
 
@@ -131,8 +131,8 @@ async function main() {
   const anon = new Browser();
   const home = await anon.get("/");
   assert.equal(home.status, 200);
-  assert.match(text(home), /Firm-grade work at plain prices/);
-  assert.match(text(home), /The Labor Pledge/);
+  assert.match(text(home), /Welcome to easier.company/);
+  assert.match(text(home), /THE LABOR PLEDGE/);
   assert.match(text(home), /hours × \$23\.08 × 12\.4% = \$\d+\.\d\d/);
   assert.match(home.html, /href="\/labor-pledge"/);
   const pledgePage = await anon.get("/labor-pledge");
@@ -207,7 +207,7 @@ async function main() {
   assert.match(text(page), /In review/);
   assert.match(text(page), /could not be classified/);
   assert.match(text(page), /Statement of Functional Expenses/);
-  assert.match(text(page), /Labor Pledge: this work would take a person about [\d.]+ hours\. At a living wage of \$23\.08 an hour, that is \$[\d,.]+ of labor\. From this fee,\s*Plainfirm contributes \$[\d.]+ \(12\.4%\)/);
+  assert.match(text(page), /Labor Pledge: this work would take a person about [\d.]+ hours\. At a living wage of \$23\.08 an hour, that is \$[\d,.]+ of labor\. From this fee,\s*easier.company contributes \$[\d.]+ \(12\.4%\)/);
   const engagementId = engagementUrl.split("/").pop();
 
   // Client B cannot reach client A's engagement
@@ -216,7 +216,7 @@ async function main() {
   assert.equal(blocked.status, 404, "cross-tenant access was not blocked");
 
   // Reviewer: claim, reclassify, approve
-  const { b: rita, landing: queue } = await signIn("rita@plainfirm.com");
+  const { b: rita, landing: queue } = await signIn("rita@easier.company");
   assert.match(queue.url, /\/review$/);
   assert.match(text(queue), /Kōkua Learning Center/);
   let review = await rita.get(`/review/${engagementId}`);

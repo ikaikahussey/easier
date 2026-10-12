@@ -66,7 +66,7 @@ const rules: Rule<Ctx>[] = [
 
 export const books = defineProduct<BooksIntake, BooksData>({
   slug: "books",
-  line: "Plainfirm Books",
+  line: "Easier Books",
   name: "Monthly close (Augmented Accountants)",
   tagline: "Nonprofit books closed every month, reviewed by an accountant, ready for your board and your 990.",
   status: "beta",

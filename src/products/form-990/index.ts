@@ -363,7 +363,7 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
 
 export const form990 = defineProduct<Form990Intake, Form990Data>({
   slug: "form-990",
-  line: "Plainfirm Tax",
+  line: "Easier Tax",
   name: "Form 990 preparation",
   tagline: "Your annual nonprofit return, prepared from your books and signed by an enrolled agent or CPA.",
   status: "live",

@@ -17,7 +17,7 @@ export default async function PackagePage({ params }: { params: Promise<{ id: st
   return (
     <Shell actor={actor}>
       <header className="mb-6 border-b border-line pb-4">
-        <p className="text-xs uppercase tracking-wide text-accent">{product.line} · Review package</p>
+        <p className="text-sm text-muted">{product.line}: review package</p>
         <h1 className="text-3xl font-semibold">
           {e.orgName} — {e.productName}, {e.period}
         </h1>

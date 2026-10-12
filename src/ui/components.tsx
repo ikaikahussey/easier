@@ -9,83 +9,136 @@ import type { Status } from "@/core/workflow";
 import type { Actor } from "@/core/services/context";
 import { logoutAction } from "@/app/actions";
 
+/** Decorative minimize / maximize / close glyphs. */
+export function TitleButtons() {
+  return (
+    <span className="titlebar-buttons" aria-hidden="true">
+      <span className="raised">_</span>
+      <span className="raised">□</span>
+      <span className="raised ml-0.5">×</span>
+    </span>
+  );
+}
+
+/** A small brand mark drawn in CSS: a beveled tile with a check. */
+export function Mark({ size = 16 }: { size?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="raised inline-grid place-items-center font-bold text-accent"
+      style={{ width: size, height: size, fontSize: size * 0.7, lineHeight: 1 }}
+    >
+      ✓
+    </span>
+  );
+}
+
+/** The whole site is one application window on the desktop. */
 export function Shell({ actor, children }: { actor?: Actor; children: ReactNode }) {
   const staff = actor && actor.role !== "client";
   return (
-    <div className="min-h-screen">
-      <header className="no-print border-b border-line">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <Link href="/" className="font-serif text-xl font-semibold tracking-tight">
-            Plainfirm
-          </Link>
-          <nav className="flex items-center gap-5 text-sm">
+    <div className="min-h-screen p-2 sm:p-6">
+      <div className="raised mx-auto max-w-6xl p-[3px]">
+        <header className="no-print">
+          <div className="titlebar">
+            <span className="flex items-center gap-2">
+              <Mark />
+              easier.company
+            </span>
+            <TitleButtons />
+          </div>
+          <nav className="flex flex-wrap items-center gap-1 border-b border-line px-1 py-1 text-[13px]" aria-label="Main">
+            <Link href="/" className="menu-item">
+              Home
+            </Link>
+            <Link href="/labor-pledge" className="menu-item">
+              Labor Pledge
+            </Link>
             {actor ? (
               <>
-                <Link href={staff ? "/review" : "/app"} className="hover:text-accent">
-                  {staff ? "Review queue" : "Your organizations"}
+                <Link href={staff ? "/review" : "/app"} className="menu-item">
+                  {staff ? "Review queue" : "Organizations"}
                 </Link>
-                <span className="hidden text-muted sm:inline">{actor.email}</span>
-                <form action={logoutAction}>
-                  <button className="text-muted hover:text-ink">Sign out</button>
+                <span className="ml-auto hidden px-2 text-muted sm:inline">{actor.email}</span>
+                <form action={logoutAction} className="sm:ml-0 ml-auto">
+                  <button className="menu-item">Sign out</button>
                 </form>
               </>
             ) : (
-              <Link href="/login" className="rounded-md bg-accent px-3 py-1.5 text-white">
+              <Link href="/login" className="menu-item ml-auto">
                 Sign in
               </Link>
             )}
           </nav>
-        </div>
-      </header>
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
-      <footer className="no-print border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-wrap gap-5 px-4 py-6 text-sm text-muted">
-          <span>Plainfirm</span>
-          <Link href="/labor-pledge" className="hover:text-accent">
-            The Labor Pledge
+        </header>
+        <main className="px-3 py-5 sm:px-6">{children}</main>
+        <footer className="no-print flex gap-[3px] pt-[3px] text-[12px]">
+          <span className="sunken flex-1 px-2 py-1">Ready</span>
+          <Link href="/labor-pledge" className="sunken px-2 py-1 text-ink! no-underline hover:underline">
+            Labor Pledge
           </Link>
-        </div>
-      </footer>
+          <span className="sunken hidden px-2 py-1 sm:inline">easier.company</span>
+        </footer>
+      </div>
     </div>
   );
 }
 
+/** Message box: a stop icon for errors, an information icon otherwise. */
 export function Notice({ error, success }: { error?: string; success?: string }) {
   if (!error && !success) return null;
   return (
-    <div
-      role={error ? "alert" : "status"}
-      className={`mb-6 rounded-md border px-4 py-3 text-sm ${
-        error ? "border-danger/30 bg-red-50 text-danger" : "border-accent/30 bg-accent-soft text-accent"
-      }`}
-    >
-      {error ?? success}
+    <div role={error ? "alert" : "status"} className="raised mb-5 flex items-start gap-3 p-3 text-sm">
+      <span
+        aria-hidden="true"
+        className={`grid h-7 w-7 shrink-0 place-items-center rounded-full! font-bold text-white ${
+          error ? "bg-danger" : "bg-accent"
+        }`}
+      >
+        {error ? "×" : "i"}
+      </span>
+      <p className="pt-1">{error ?? success}</p>
     </div>
   );
 }
 
-const STATUS_STYLE: Record<Status, string> = {
-  awaiting_documents: "bg-amber-50 text-warn",
-  in_review: "bg-blue-50 text-blue-800",
-  changes_requested: "bg-red-50 text-danger",
-  approved: "bg-accent-soft text-accent",
-  delivered: "bg-stone-100 text-muted",
+const STATUS_DOT: Record<Status, string> = {
+  awaiting_documents: "bg-[#ffff00]",
+  in_review: "bg-[#00ffff]",
+  changes_requested: "bg-[#ff0000]",
+  approved: "bg-[#00ff00]",
+  delivered: "bg-[#808080]",
 };
 
 export function StatusBadge({ status, label }: { status: Status; label: string }) {
-  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[status]}`}>{label}</span>;
+  return (
+    <span className="sunken inline-flex items-center gap-1.5 bg-white px-2 py-0.5 text-xs text-ink">
+      <span aria-hidden="true" className={`inline-block h-2 w-2 border border-black ${STATUS_DOT[status]}`} />
+      {label}
+    </span>
+  );
 }
 
+/** A group box: the 1990s dialog's way of grouping related controls. */
 export function Card({ title, children, aside }: { title?: string; children: ReactNode; aside?: ReactNode }) {
   return (
-    <section className="mb-6 rounded-lg border border-line bg-white p-5">
-      {(title || aside) && (
-        <div className="mb-3 flex items-baseline justify-between gap-4">
-          {title && <h2 className="text-lg font-semibold">{title}</h2>}
-          {aside}
-        </div>
-      )}
+    <fieldset className="groupbox mb-5 min-w-0">
+      {title && <legend>{title}</legend>}
+      {aside && <div className="-mt-1 mb-2 flex justify-end">{aside}</div>}
       {children}
+    </fieldset>
+  );
+}
+
+/** A standalone window, used for featured content. */
+export function Window({ title, children, className = "" }: { title: string; children: ReactNode; className?: string }) {
+  return (
+    <section className={`raised p-[3px] ${className}`}>
+      <div className="titlebar">
+        <span>{title}</span>
+        <TitleButtons />
+      </div>
+      <div className="p-4">{children}</div>
     </section>
   );
 }
@@ -99,7 +152,8 @@ export function QuoteBox({ quote }: { quote: Quote }) {
           <dd className="tabular-nums">{formatUsd(l.cents)}</dd>
         </div>
       ))}
-      <div className="mt-1 flex justify-between border-t border-line pt-2 font-semibold">
+      <hr className="etched my-1" />
+      <div className="flex justify-between pt-1 font-bold">
         <dt>{quote.tier}</dt>
         <dd className="tabular-nums">{formatUsd(quote.total)}</dd>
       </div>
@@ -108,17 +162,18 @@ export function QuoteBox({ quote }: { quote: Quote }) {
   );
 }
 
+/** Tooltip-yellow note on every quote. */
 export function PledgeNote({ pledge }: { pledge: PledgeTerms }) {
   return (
-    <div className="mt-3 rounded-md bg-accent-soft px-3 py-2 text-xs text-accent">
+    <div className="mt-3 border border-black bg-accent-soft px-3 py-2 text-xs text-ink">
       <p>
         Labor Pledge: this work would take a person about {pledge.hours} hours. At a living wage of{" "}
         {formatUsdCents(pledge.hourlyWage)} an hour, that is {formatUsdCents(pledge.laborValue)} of labor. From this fee,
-        Plainfirm contributes {formatUsdCents(pledge.contribution)} ({Math.round(LABOR_PLEDGE.rate * 1000) / 10}%) to{" "}
+        easier.company contributes {formatUsdCents(pledge.contribution)} ({Math.round(LABOR_PLEDGE.rate * 1000) / 10}%) to{" "}
         {LABOR_PLEDGE.recipient}.
       </p>
       <details className="mt-1">
-        <summary className="cursor-pointer">How the hours are estimated</summary>
+        <summary className="cursor-pointer text-link underline">How the hours are estimated</summary>
         <ul className="mt-1 space-y-0.5">
           {pledge.tasks.map((t) => (
             <li key={t.label} className="flex justify-between gap-3">
@@ -133,20 +188,26 @@ export function PledgeNote({ pledge }: { pledge: PledgeTerms }) {
 }
 
 const SEVERITY: Record<Finding["severity"], [string, string]> = {
-  error: ["Must fix", "border-l-danger"],
-  warning: ["Review", "border-l-warn"],
-  info: ["Note", "border-l-line"],
+  error: ["Must fix", "bg-danger"],
+  warning: ["Review", "bg-[#ffcc00]"],
+  info: ["Note", "bg-accent"],
 };
 
 export function Findings({ findings }: { findings: Finding[] }) {
-  if (!findings.length) return <p className="text-sm text-muted">No findings. All checks passed.</p>;
+  if (!findings.length) return <p className="text-sm">No findings. All checks passed.</p>;
   return (
-    <ul className="space-y-2">
+    <ul className="sunken space-y-0 bg-white p-1">
       {findings.map((f, i) => (
-        <li key={i} className={`border-l-4 bg-paper px-3 py-2 text-sm ${SEVERITY[f.severity][1]}`}>
-          <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-muted">{SEVERITY[f.severity][0]}</span>
-          {f.message}
-          {f.ref && <span className="ml-2 text-xs text-muted">({f.ref})</span>}
+        <li key={i} className="flex items-start gap-2 px-2 py-1.5 text-sm">
+          <span
+            aria-hidden="true"
+            className={`mt-1 inline-block h-2.5 w-2.5 shrink-0 border border-black ${SEVERITY[f.severity][1]}`}
+          />
+          <span>
+            <span className="mr-1 font-bold">{SEVERITY[f.severity][0]}:</span>
+            {f.message}
+            {f.ref && <span className="ml-2 text-xs text-muted">({f.ref})</span>}
+          </span>
         </li>
       ))}
     </ul>
@@ -161,24 +222,24 @@ export function Worksheet({ sections }: { sections: ReviewSection[] }) {
         <Card key={s.id} title={s.title}>
           {s.note && <p className="mb-3 text-sm text-muted">{s.note}</p>}
           {s.kind === "fields" ? (
-            <dl className="grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
+            <dl className="sunken grid gap-x-8 bg-white p-2 text-sm sm:grid-cols-2">
               {s.fields.map((f) => (
-                <div key={f.label} className="flex justify-between gap-4 border-b border-line/60 py-1.5">
+                <div key={f.label} className="flex justify-between gap-4 border-b border-dotted border-line py-1">
                   <dt className="text-muted">
                     {f.label}
-                    {f.ref && <span className="ml-1 text-xs">· {f.ref}</span>}
+                    {f.ref && <span className="ml-1 text-xs">({f.ref})</span>}
                   </dt>
                   <dd className="text-right tabular-nums">{f.value}</dd>
                 </div>
               ))}
             </dl>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="sunken overflow-x-auto bg-white p-[2px]">
+              <table className="listview w-full text-sm">
                 <thead>
-                  <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+                  <tr className="text-left">
                     {s.columns.map((c) => (
-                      <th key={c.key} className={`py-2 pr-4 font-medium ${c.numeric ? "text-right" : ""}`}>
+                      <th key={c.key} className={c.numeric ? "text-right" : ""}>
                         {c.label}
                       </th>
                     ))}
@@ -186,9 +247,9 @@ export function Worksheet({ sections }: { sections: ReviewSection[] }) {
                 </thead>
                 <tbody>
                   {s.rows.map((r, i) => (
-                    <tr key={i} className="border-b border-line/60 align-top">
+                    <tr key={i} className="align-top">
                       {s.columns.map((c) => (
-                        <td key={c.key} className={`py-1.5 pr-4 ${c.numeric ? "text-right tabular-nums" : ""}`}>
+                        <td key={c.key} className={c.numeric ? "text-right tabular-nums" : ""}>
                           {r[c.key]}
                         </td>
                       ))}
@@ -197,9 +258,9 @@ export function Worksheet({ sections }: { sections: ReviewSection[] }) {
                 </tbody>
                 {s.footer && (
                   <tfoot>
-                    <tr className="font-semibold">
+                    <tr className="border-t border-black font-bold">
                       {s.columns.map((c) => (
-                        <td key={c.key} className={`py-2 pr-4 ${c.numeric ? "text-right tabular-nums" : ""}`}>
+                        <td key={c.key} className={c.numeric ? "text-right tabular-nums" : ""}>
                           {s.footer![c.key]}
                         </td>
                       ))}
@@ -215,12 +276,12 @@ export function Worksheet({ sections }: { sections: ReviewSection[] }) {
   );
 }
 
-const input = "w-full rounded-md border border-line bg-white px-3 py-2 text-sm focus:border-accent focus:outline-none";
+const input = "field sunken w-full text-sm";
 
 function Field({ f, name, values = {} }: { f: FieldSpec; name: string; values?: Record<string, string> }) {
   const v = values[name];
   const label = (
-    <span className="mb-1 block text-sm font-medium">
+    <span className="mb-1 block text-sm">
       {f.label}
       {f.required && <span className="text-danger"> *</span>}
     </span>
@@ -235,7 +296,7 @@ function Field({ f, name, values = {} }: { f: FieldSpec; name: string; values?: 
       );
     case "yesno":
       return (
-        <fieldset className="flex flex-wrap items-center justify-between gap-3 border-b border-line/60 py-2">
+        <fieldset className="flex flex-wrap items-center justify-between gap-3 border-b border-dotted border-line py-2">
           <legend className="sr-only">{f.label}</legend>
           <span className="max-w-xl text-sm">
             {f.label}
@@ -278,7 +339,7 @@ function Field({ f, name, values = {} }: { f: FieldSpec; name: string; values?: 
           {label}
           <div className="space-y-3">
             {Array.from({ length: f.rows }, (_, i) => (
-              <div key={i} className="grid gap-3 rounded-md border border-line/70 p-3 sm:grid-cols-2">
+              <div key={i} className="grid gap-3 border border-line p-3 sm:grid-cols-2">
                 {f.fields.map((sub) => (
                   <Field key={sub.name} f={{ ...sub, required: false }} name={`${name}.${i}.${sub.name}`} values={values} />
                 ))}
@@ -326,17 +387,12 @@ export function FormFields({ form, values }: { form: FormSpec; values?: Record<s
   );
 }
 
+/** Beveled push button. "primary" is the dialog's default button; "danger" marks destructive choices in red text. */
+export const buttonClass = (variant: "primary" | "quiet" | "danger" = "quiet") =>
+  `btn raised ${variant === "primary" ? "btn-default font-bold" : ""} ${variant === "danger" ? "text-danger!" : ""}`;
+
 export const Button = ({ children, variant = "primary", ...rest }: { children: ReactNode; variant?: "primary" | "quiet" | "danger" } & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-  <button
-    {...rest}
-    className={`rounded-md px-4 py-2 text-sm font-medium disabled:opacity-40 ${
-      variant === "primary"
-        ? "bg-accent text-white hover:bg-accent/90"
-        : variant === "danger"
-          ? "border border-danger/40 text-danger hover:bg-red-50"
-          : "border border-line bg-white hover:bg-paper"
-    } ${rest.className ?? ""}`}
-  >
+  <button {...rest} className={`${buttonClass(variant)} ${rest.className ?? ""}`}>
     {children}
   </button>
 );

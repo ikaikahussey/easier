@@ -1,27 +1,215 @@
 @import "tailwindcss";
 
+/*
+ * easier.company — a late-1990s desktop application.
+ * The whole site is one application window on a teal desktop: navy title bar,
+ * menu bar, gray dialog face, group boxes, beveled buttons, sunken fields, status bar.
+ */
 @theme {
-  --color-paper: #faf8f3;
-  --color-ink: #1c1f1d;
-  --color-muted: #5f665f;
-  --color-line: #e2ddd2;
-  --color-accent: #1f5a43;
-  --color-accent-soft: #e5efe9;
-  --color-danger: #9b2c2c;
-  --color-warn: #8a5a00;
-  --font-serif: ui-serif, "Iowan Old Style", Georgia, serif;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-desktop: #008080;
+  --color-paper: #c0c0c0; /* window face */
+  --color-ink: #000000;
+  --color-muted: #333333;
+  --color-line: #808080; /* bevel shadow */
+  --color-hilite: #ffffff; /* bevel highlight */
+  --color-accent: #000080; /* title bars, selection */
+  --color-accent-soft: #ffffe1; /* tooltip yellow */
+  --color-danger: #a00000;
+  --color-warn: #6b5000;
+  --color-link: #0000ee;
+  --color-visited: #551a8b;
+  --font-sans: Tahoma, Verdana, Geneva, "DejaVu Sans", sans-serif;
+  --font-serif: "Times New Roman", Times, "Liberation Serif", serif;
+  --font-mono: "Courier New", Courier, "Liberation Mono", monospace;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-full: 0;
+}
+
+html {
+  background: var(--color-desktop);
 }
 
 body {
-  background: var(--color-paper);
+  background: var(--color-desktop);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: 14px;
 }
 
-h1, h2, h3 { font-family: var(--font-serif); letter-spacing: -0.01em; }
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+}
+
+a {
+  color: var(--color-link);
+}
+a:visited {
+  color: var(--color-visited);
+}
+
+:focus-visible {
+  outline: 1px dotted #000;
+  outline-offset: 2px;
+}
+
+/* ── Bevels ─────────────────────────────────────────────────────────────── */
+
+.raised {
+  background: var(--color-paper);
+  box-shadow:
+    inset -1px -1px #000,
+    inset 1px 1px var(--color-hilite),
+    inset -2px -2px var(--color-line),
+    inset 2px 2px #dfdfdf;
+}
+
+.sunken {
+  box-shadow:
+    inset -1px -1px var(--color-hilite),
+    inset 1px 1px var(--color-line),
+    inset -2px -2px #dfdfdf,
+    inset 2px 2px #000;
+}
+
+.etched {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  border-bottom: 1px solid var(--color-hilite);
+}
+
+/* ── Window chrome ──────────────────────────────────────────────────────── */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 3px 3px 6px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  font-weight: bold;
+  font-size: 13px;
+}
+
+.titlebar-buttons {
+  display: flex;
+  gap: 2px;
+}
+.titlebar-buttons span {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 14px;
+  color: #000;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* Menu items underline their first letter, like keyboard accelerators. */
+.menu-item {
+  padding: 2px 8px;
+  color: #000 !important;
+  text-decoration: none;
+}
+.menu-item::first-letter {
+  text-decoration: underline;
+}
+.menu-item:hover {
+  background: var(--color-accent);
+  color: #fff !important;
+}
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-block;
+  min-width: 75px;
+  padding: 5px 14px;
+  text-align: center;
+  color: #000 !important;
+  text-decoration: none;
+  cursor: default;
+  font-size: 13px;
+}
+.btn:active:not(:disabled) {
+  box-shadow:
+    inset 1px 1px #000,
+    inset -1px -1px var(--color-hilite),
+    inset 2px 2px var(--color-line),
+    inset -2px -2px #dfdfdf;
+  padding: 6px 13px 4px 15px;
+}
+.btn:focus-visible {
+  outline: 1px dotted #000;
+  outline-offset: -5px;
+}
+.btn:disabled {
+  color: var(--color-line) !important;
+  text-shadow: 1px 1px var(--color-hilite);
+}
+/* The default button carries an extra black frame. */
+.btn-default {
+  outline: 1px solid #000;
+}
+
+.field {
+  background: #fff;
+  padding: 4px 6px;
+  border: 0;
+}
+.field:focus {
+  outline: none;
+}
+
+/* ── Group box (fieldset with a legend) ─────────────────────────────────── */
+
+.groupbox {
+  border: 1px solid var(--color-line);
+  box-shadow: 1px 1px 0 var(--color-hilite), inset 1px 1px 0 var(--color-hilite);
+  padding: 14px 14px 12px;
+}
+.groupbox > legend {
+  padding: 0 4px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: bold;
+}
+
+/* ── List views ─────────────────────────────────────────────────────────── */
+
+.listview th {
+  background: var(--color-paper);
+  box-shadow:
+    inset -1px -1px #000,
+    inset 1px 1px var(--color-hilite),
+    inset -2px -2px var(--color-line);
+  padding: 3px 6px;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #000;
+  font-size: 12px;
+}
+.listview td {
+  padding: 3px 6px;
+}
+
+/* ── Wizard art panel ───────────────────────────────────────────────────── */
+
+.wizard-art {
+  background: linear-gradient(180deg, #000080 0%, #1084d0 55%, #008080 100%);
+}
 
 @media print {
-  .no-print { display: none !important; }
-  body { background: white; }
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body {
+    background: white;
+  }
 }

@@ -42,14 +42,14 @@ export interface Principal {
 }
 
 /**
- * Run client-data access as the restricted plainfirm_app role. Row-level security
+ * Run client-data access as the restricted easier_app role. Row-level security
  * then limits every statement to the principal's organizations (or, for staff, to
  * assigned engagements), regardless of the WHERE clauses the caller writes.
  */
 export async function withTenant<T>(p: Principal, fn: (tx: Tx) => Promise<T>): Promise<T> {
   const db = await getDb();
   return db.transaction(async (tx) => {
-    await tx.execute(sql`set local role plainfirm_app`);
+    await tx.execute(sql`set local role easier_app`);
     await tx.execute(
       sql`select set_config('app.user_id', ${p.userId}, true), set_config('app.staff_user_id', ${p.staff ? p.userId : ""}, true)`,
     );

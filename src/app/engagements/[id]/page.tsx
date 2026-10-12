@@ -57,7 +57,7 @@ export default async function EngagementPage({
                     </p>
                     <p className="text-xs text-muted">{kind.help}</p>
                     {latest && (
-                      <p className="text-xs text-accent">
+                      <p className="text-xs">
                         Uploaded: {latest.filename} ({Math.ceil(latest.size / 1024)} KB)
                       </p>
                     )}
@@ -105,7 +105,7 @@ export default async function EngagementPage({
           )}
           {(e.status === "approved" || e.status === "delivered") && (
             <Card title="Your return">
-              <Link href={`/engagements/${e.id}/package`} className="text-sm text-accent underline">
+              <Link href={`/engagements/${e.id}/package`} className="text-sm">
                 Open the signed review package
               </Link>
             </Card>

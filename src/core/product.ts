@@ -105,7 +105,7 @@ export interface RuleContext<I, D> {
 
 export interface ProductDefinition<I = any, D = any> {
   slug: string;
-  /** Brand line, e.g. "Plainfirm Tax". */
+  /** Brand line, e.g. "Easier Tax". */
   line: string;
   name: string;
   tagline: string;

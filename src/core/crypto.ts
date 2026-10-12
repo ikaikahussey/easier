@@ -22,10 +22,10 @@ export function masterKey(env: NodeJS.ProcessEnv = process.env): Buffer {
   }
   if (env.NODE_ENV === "production") throw new CryptoError("DATA_ENCRYPTION_KEY is required in production");
   if (!devKeyWarned) {
-    console.warn("[plainfirm] DATA_ENCRYPTION_KEY not set; using an insecure development key");
+    console.warn("[easier] DATA_ENCRYPTION_KEY not set; using an insecure development key");
     devKeyWarned = true;
   }
-  return createHash("sha256").update("plainfirm-insecure-development-key").digest();
+  return createHash("sha256").update("easier-insecure-development-key").digest();
 }
 
 function encrypt(key: Buffer, plaintext: Buffer, aad: string): string {

@@ -12,9 +12,9 @@ export default async function Queue() {
 
   const List = ({ items, empty }: { items: typeof all; empty: string }) =>
     items.length ? (
-      <table className="w-full text-sm">
+      <table className="listview sunken w-full bg-white text-sm">
         <thead>
-          <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+          <tr className="text-left">
             <th className="py-2">Client</th>
             <th>Product</th>
             <th>Due</th>
@@ -27,7 +27,7 @@ export default async function Queue() {
           {items.map((e) => (
             <tr key={e.id} className="border-b border-line/60">
               <td className="py-2">
-                <Link href={`/review/${e.id}`} className="font-medium hover:text-accent">
+                <Link href={`/review/${e.id}`} className="font-bold">
                   {e.orgName}
                 </Link>
               </td>

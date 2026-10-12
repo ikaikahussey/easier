@@ -36,9 +36,9 @@ beforeAll(async () => {
   });
   alice = await makeUser(db, "alice@a.org");
   bob = await makeUser(db, "bob@b.org");
-  rita = await makeUser(db, "rita@plainfirm.com", "reviewer");
-  rex = await makeUser(db, "rex@plainfirm.com", "reviewer");
-  admin = await makeUser(db, "admin@plainfirm.com", "admin");
+  rita = await makeUser(db, "rita@easier.company", "reviewer");
+  rex = await makeUser(db, "rex@easier.company", "reviewer");
+  admin = await makeUser(db, "admin@easier.company", "admin");
 
   orgA = (await createOrganization(alice, { name: "Org A", ein: "991234567" })).id;
   orgB = (await createOrganization(bob, { name: "Org B" })).id;
@@ -219,12 +219,12 @@ describe("tenant isolation", () => {
 
 describe("authentication", () => {
   it("issues single-use, hashed sign-in tokens and assigns staff roles from config", async () => {
-    process.env.REVIEWER_EMAILS = "new.reviewer@plainfirm.com";
-    const token = await requestLogin("New.Reviewer@Plainfirm.com ");
+    process.env.REVIEWER_EMAILS = "new.reviewer@easier.company";
+    const token = await requestLogin("New.Reviewer@Easier.company ");
     const stored = await withSystem((tx) => tx.select().from(schema.loginTokens));
     expect(stored.some((t) => t.tokenHash === token)).toBe(false);
     const actor = await consumeLogin(token);
-    expect(actor).toMatchObject({ email: "new.reviewer@plainfirm.com", role: "reviewer" });
+    expect(actor).toMatchObject({ email: "new.reviewer@easier.company", role: "reviewer" });
     expect(await consumeLogin(token)).toBeUndefined();
     expect(await consumeLogin("nonsense")).toBeUndefined();
   });

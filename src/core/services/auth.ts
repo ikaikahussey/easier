@@ -68,7 +68,7 @@ function sessionSecret(): string {
   const s = process.env.SESSION_SECRET;
   if (s && s.length >= 32) return s;
   if (process.env.NODE_ENV === "production") throw new Error("SESSION_SECRET (32+ characters) is required in production");
-  return "plainfirm-insecure-development-session-secret";
+  return "easier-insecure-development-session-secret";
 }
 
 export function createSessionToken(userId: string, now = Date.now()): string {
@@ -93,17 +93,17 @@ export async function sendLoginLink(email: string, url: string): Promise<void> {
   if (!key || process.env.MAIL_TRANSPORT === "log") {
     if (process.env.NODE_ENV === "production" && process.env.MAIL_TRANSPORT !== "log")
       throw new Error("RESEND_API_KEY is required in production (or MAIL_TRANSPORT=log for local testing)");
-    console.info(`[plainfirm] Sign-in link for ${email}: ${url}`);
+    console.info(`[easier] Sign-in link for ${email}: ${url}`);
     return;
   }
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      from: process.env.MAIL_FROM ?? "Plainfirm <no-reply@plainfirm.com>",
+      from: process.env.MAIL_FROM ?? "easier.company <no-reply@easier.company>",
       to: email,
-      subject: "Your Plainfirm sign-in link",
-      text: `Sign in to Plainfirm: ${url}\n\nThis link expires in 15 minutes and works once. If you did not request it, ignore this email.`,
+      subject: "Your easier.company sign-in link",
+      text: `Sign in to easier.company: ${url}\n\nThis link expires in 15 minutes and works once. If you did not request it, ignore this email.`,
     }),
   });
   if (!res.ok) throw new Error(`Email delivery failed (${res.status})`);

@@ -34,7 +34,7 @@ export default async function ReviewPage({
   const header = (
     <>
       <p className="text-sm text-muted">
-        <Link href="/review" className="hover:text-accent">
+        <Link href="/review" >
           Review queue
         </Link>{" "}
         · {e.productLine}
@@ -89,9 +89,9 @@ export default async function ReviewPage({
               {ledger && (
                 <Card title="Account classification" aside={<span className="text-xs text-muted">Flagged accounts first</span>}>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="listview sunken w-full bg-white text-sm">
                       <thead>
-                        <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+                        <tr className="text-left">
                           <th className="py-2">Account</th>
                           <th className="text-right">Balance</th>
                           <th className="pl-4">Line</th>
@@ -186,7 +186,7 @@ export default async function ReviewPage({
                   </form>
                 ))}
               {(e.status === "approved" || e.status === "delivered") && (
-                <Link href={`/engagements/${e.id}/package`} className="block text-sm text-accent underline">
+                <Link href={`/engagements/${e.id}/package`} className="block text-sm">
                   Open review package
                 </Link>
               )}

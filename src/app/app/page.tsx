@@ -5,7 +5,7 @@ import { listEngagements } from "@/core/services/engagements";
 import { listOrganizations } from "@/core/services/organizations";
 import { formatUsd } from "@/core/money";
 import { PRODUCTS } from "@/products";
-import { Button, Card, Notice, Shell, StatusBadge, inputClass } from "@/ui/components";
+import { Button, buttonClass, Card, Notice, Shell, StatusBadge, inputClass } from "@/ui/components";
 import { requireActor } from "@/ui/session";
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
@@ -30,7 +30,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               .filter((e) => e.orgId === org.id)
               .map((e) => (
                 <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                  <Link href={`/engagements/${e.id}`} className="font-medium hover:text-accent">
+                  <Link href={`/engagements/${e.id}`} className="font-bold">
                     {e.productName} · {e.period}
                   </Link>
                   <span className="flex items-center gap-4 text-sm text-muted">
@@ -46,7 +46,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               <Link
                 key={p.slug}
                 href={`/app/orgs/${org.id}/new?product=${p.slug}`}
-                className="rounded-md border border-line px-3 py-1.5 text-sm hover:bg-paper"
+                className={buttonClass("quiet")}
               >
                 Start {p.name}
               </Link>

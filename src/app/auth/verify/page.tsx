@@ -9,7 +9,7 @@ export default async function Verify({ searchParams }: { searchParams: Promise<{
         <Card title="Finish signing in">
           <form action={verifyLoginAction}>
             <input type="hidden" name="token" value={token ?? ""} />
-            <Button type="submit">Continue to Plainfirm</Button>
+            <Button type="submit">Continue to easier.company</Button>
           </form>
         </Card>
       </div>

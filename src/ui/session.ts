@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { createSessionToken, getActor, readSessionToken, SESSION_TTL_MS } from "@/core/services/auth";
 import { isStaff, type Actor } from "@/core/services/context";
 
-const COOKIE = "pf_session";
+const COOKIE = "ec_session";
 
 export async function currentActor(): Promise<Actor | undefined> {
   const uid = readSessionToken((await cookies()).get(COOKIE)?.value);
