@@ -215,6 +215,8 @@ describe("Schedule D", async () => {
     // Audit includes $5,000 of donated services as both revenue and expense.
     const ok = await draftWith({
       auditedFinancials: true,
+      statementBasis: "separate",
+      auditCommittee: true,
       auditedRevenue: 492500,
       auditedExpenses: 476700,
       reconcilingItems: [
@@ -248,7 +250,7 @@ describe("Schedule I", async () => {
 });
 
 describe("Schedule J", async () => {
-  const officers = [{ name: "Leilani Kahale", title: "Executive Director", hours: 40, compensation: 160000 }];
+  const officers = [...intake990.officers.slice(1), { name: "Leilani Kahale", title: "Executive Director", position: "officer" as const, hours: 40, compensation: 160000 }];
 
   it("requires a breakdown for everyone over $150,000", async () => {
     const { snap } = await draftWith({ highComp: true, officers });

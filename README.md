@@ -30,22 +30,29 @@ src/core/            product-agnostic platform
   services/          organizations, engagements, auth (the only path from UI to data)
 src/domains/nonprofit  990-keyed line catalog shared by Books and Form 990
 src/products/        form-990, books, and the registry (index.ts)
-  form-990/schedules/  one module per IRS schedule (A, B, C, D, F, G, I, J, L, M, R): intake, computation, rules, worksheet
+  form-990/parts/      core-form parts: heading, IV (checklist), V, VI, VII, XI–XII
+  form-990/schedules/  one module per IRS schedule (A, B, C, D, E, F, G, I, J, L, M, N, R): intake, computation, rules, worksheet
+  form-990/export.ts   the approved return as line-numbered JSON (with Form 8879-TE values)
 src/app, src/ui      Next.js pages and generic components
 drizzle/             SQL migrations, including 0001_tenant_isolation.sql (RLS)
 ```
 
 **Adding a product** means writing a module that satisfies `ProductDefinition` (intake spec, documents, `build`, `rules`, `render`, `quote`, optional `deadline`) and listing it in `src/products/index.ts`. Intake forms, the review workspace, workflow, audit trail, encryption, and pricing display come from the platform.
 
+**Form 990 core form.** Every line of Form 990 (heading items A–M, Parts I–XII) and Form 990-EZ (Parts I–VI) is either computed from the classified ledger or collected in the intake. Part IV (the checklist) is answered from the books, the schedule triggers, and a short set of direct questions; any schedule or part it requires that this service does not prepare (Schedule D Parts I–V, H, K, R Part VI) is a blocking finding. Part VII lists every officer, director, trustee, key employee, and highest compensated employee with position, hours, and the three compensation columns, plus the five highest contractors over $100,000; Schedule J is triggered from its lines 3–5. Part XI reconciles net assets to the balance sheet and blocks approval on an unexplained difference. Form selection applies the $75,000 first-year and $60,000 early-years tests from the year of formation.
+
 **Form 990 schedules.** The Part IV checklist (`form-990/schedules.ts`) decides which schedules apply. Each schedule module (`form-990/schedules/`) declares the client questions it needs, computes its figures from the ledger and those answers, checks them, and renders worksheet sections. Highlights:
 
 - Schedule A computes the five-year public support tests (Part II for 170(b)(1)(A)(vi), Part III for 509(a)(2)), including the 2% donor limit, the $5,000/1% payer limit, disqualified persons, the first-five-years rule, and the 10% facts-and-circumstances test.
 - Schedule B applies the general rule or, for organizations that pass the 33⅓% test, the special rule (greater of $5,000 or 2% of line 1h).
+- Schedule C computes the 501(h) nontaxable amounts and the four-year averaging ceilings.
+- Schedule D Part VI is built from the fixed asset accounts and must tie to Part X line 10c; Parts VII–X list the accounts behind Part X lines 12, 13, 15, and 25; Parts XI–XII reconcile audited statements to Part I lines 12 and 18.
 - Schedule G splits event receipts: the contribution portion moves from Part VIII line 8a to line 1c before anything else reads revenue.
-- Schedule D Part VI is built from the fixed asset accounts and must tie to Part X line 10c; Parts XI–XII reconcile audited statements to Part I lines 12 and 18.
-- Schedules C (501(h) nontaxable amounts), I, J, L, M, R, and F list and check the detail and tie it to the books where possible.
+- Schedules E, F, I, J, L, M, N, and R list and check the detail and tie it to the books where possible.
 
-Schedule questions are optional in the intake form (folded by default) and become blocking findings when the schedule applies. Clients can revise their answers until the engagement goes to review. Not covered: Schedules E, H, K, N; Schedule A Part IV (supporting organizations); the four-year averages in Schedule C Part II-A; Schedule R Part V.
+Schedule questions are optional in the intake form (folded by default) and become blocking findings when the schedule applies. Clients can revise their answers until the engagement goes to review. Not prepared: Schedule D Parts I–V (donor advised funds, easements, collections, escrow, endowments), Schedules H and K, Schedule A Part IV (supporting organizations), Schedule R Part VI, Forms 990-T and 4720.
+
+**Export.** The approved return downloads from the package page as line-numbered JSON in whole dollars (`/engagements/{id}/package/return.json`): heading, Parts I–XII, every schedule's detail, Schedule O, the Form 990-EZ line mapping for EZ filers, and the Form 8879-TE Part I values. It is the hand-off to filing software until a transmitter integration exists.
 
 **Classification pipeline:** reviewer override → keyword rule → AI (validated against the account type) → catch-all line flagged for review. AI outputs are cached per draft by input hash, so reviewer edits do not trigger new model calls unless an AI input changed. Without `ANTHROPIC_API_KEY`, deterministic fallbacks run and unmatched accounts are routed to the reviewer.
 
@@ -85,6 +92,7 @@ npm run check      # typecheck → unit/integration tests → production build �
 
 - `tests/core.test.ts`, `tests/products.test.ts`: parsing, classification, deadlines, rules, form selection, schedules, allocation, pledge.
 - `tests/schedules.test.ts`: each schedule's computation against figures worked by hand from the fixtures.
+- `tests/core-form.test.ts`: form selection by age, Part IV answers, Part VII, Part XI reconciliation, Parts V–VI, Schedules E, N, C averaging, R Part V, D Parts VII–X, and the export.
 - `tests/services.test.ts`: full lifecycle plus tenant isolation against real Postgres (PGlite) with RLS.
 - `scripts/e2e.mjs`: drives the production build through plain HTML forms (no JavaScript) for sign-in, intake, upload, AI draft, reviewer claim, reclassify, and approve, plus cross-tenant 404s.
 

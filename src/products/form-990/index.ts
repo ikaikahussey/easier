@@ -1,7 +1,7 @@
 import { deadline, parseIsoDate } from "@/core/deadlines";
 import { formatUsd, toDollars, type Cents } from "@/core/money";
 import { laborTask, type LaborTask } from "@/core/pledge";
-import { defineProduct, quote, type QuoteLine, type EditableText, type ReviewSection, type RuleContext } from "@/core/product";
+import { defineProduct, quote, type BuildInput, type QuoteLine, type EditableText, type ReviewSection, type RuleContext } from "@/core/product";
 import { amountTable, fields, table } from "@/core/render";
 import type { Rule } from "@/core/rules";
 import { EZ_LABELS, isNettedLine, NONPROFIT_CATALOG } from "@/domains/nonprofit/lines";
@@ -12,13 +12,12 @@ import { columnTotals, functionalExpenses, type FunctionalRow } from "./allocati
 import { selectFormType, type FormType } from "./form-type";
 import { FORM_990_INTAKE, type Form990Intake } from "./intake";
 import { requiredSchedules, type RequiredSchedule } from "./schedules";
-import {
-  applyEventSplit,
-  buildScheduleDetail,
-  renderScheduleDetail,
-  scheduleRules,
-  type ScheduleFacts,
-} from "./schedules/index";
+import { applyEventSplit, buildModules, moduleRules, renderModules, SCHEDULE_MODULES, type ScheduleFacts } from "./schedules/index";
+import { POST_SCHEDULE_PARTS, PRE_SCHEDULE_PARTS } from "./parts/index";
+import type { HeaderOut } from "./parts/header";
+import type { PartVIOut } from "./parts/part-vi";
+import { scheduleLetters } from "./schedules";
+import { exportReturn } from "./export";
 
 export interface Form990Data {
   formType: FormType;
@@ -36,8 +35,10 @@ export interface Form990Data {
   scheduleO: { ref: string; text: string }[];
   /** Event contributions moved from Part VIII line 8a to line 1c (Schedule G detail). */
   eventSplit: Cents;
-  /** Prepared schedules keyed by letter (A, B, C, D, F, G, I, J, L, M, R). */
+  /** Prepared schedules keyed by letter (A, B, C, D, E, F, G, I, J, L, M, N, R). */
   scheduleDetail: Record<string, unknown>;
+  /** Core-form parts keyed by id (H0 heading, IV, V, VI, VII, XI). */
+  parts: Record<string, unknown>;
 }
 
 /** Placeholder list prices in cents; adjust after pilot pricing tests. */
@@ -96,20 +97,26 @@ export function form990Labor(w: Form990Workload): LaborTask[] {
 
 type Ctx = RuleContext<Form990Intake, Form990Data>;
 
-/** The facts schedule modules read, rebuilt from a finished draft. */
-function scheduleFacts(intake: Form990Intake, d: Form990Data): ScheduleFacts {
+/** The facts schedule and part modules read, rebuilt from a finished draft. */
+function scheduleFacts(input: BuildInput<Form990Intake>, d: Form990Data): ScheduleFacts {
   return {
-    intake,
+    intake: input.intake,
+    org: input.org,
+    period: input.period,
+    prior: input.prior,
     ledger: d.ledger,
     formType: d.formType,
     taxYear: Number(d.taxYear.begin.slice(0, 4)),
     functional: d.functional,
     totalExpenses: d.totalExpenses,
     parts: new Set(d.schedules.map((s) => s.part).filter((p): p is string => !!p)),
+    requiredLetters: new Set(scheduleLetters(d.schedules)),
     eventSplit: d.eventSplit ?? 0,
-    outputs: d.scheduleDetail ?? {},
+    outputs: { ...(d.parts ?? {}), ...(d.scheduleDetail ?? {}) },
   };
 }
+
+const allOutputs = (d: Form990Data) => ({ ...(d.parts ?? {}), ...(d.scheduleDetail ?? {}) });
 
 function taxYearFor(end: string) {
   const e = parseIsoDate(end);
@@ -121,7 +128,8 @@ const pctOff = (a: Cents, b: Cents) => (b === 0 ? (a === 0 ? 0 : Infinity) : Mat
 
 const rules: Rule<Ctx>[] = [
   ...nonprofitLedgerRules<Ctx>((c) => c.data.ledger),
-  ...scheduleRules<Ctx>(({ input, data }) => ({ facts: scheduleFacts(input.intake, data), outputs: data.scheduleDetail ?? {} })),
+  ...moduleRules<Ctx>([...PRE_SCHEDULE_PARTS, ...POST_SCHEDULE_PARTS], "part_", ({ input, data }) => ({ facts: scheduleFacts(input, data), outputs: allOutputs(data) })),
+  ...moduleRules<Ctx>(SCHEDULE_MODULES, "sched_", ({ input, data }) => ({ facts: scheduleFacts(input, data), outputs: allOutputs(data) })),
   {
     id: "f990.private_foundation",
     severity: "error",
@@ -263,7 +271,7 @@ const rules: Rule<Ctx>[] = [
   },
 ];
 
-function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection[] {
+function render(d: Form990Data, input: BuildInput<Form990Intake>): ReviewSection[] {
   const i = input.intake;
   const summary = fields("summary", "Summary", [
     ["Form", d.formType],
@@ -277,8 +285,13 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
     ["Total liabilities (end of year)", formatUsd(d.ledger.totals.liabilities), "Part I, line 21"],
     ["Net assets (end of year)", formatUsd(d.ledger.totals.endingNetAssets), "Part I, line 22"],
   ]);
-  if (d.formType === "990-N") return [summary];
-  const detail = renderScheduleDetail(scheduleFacts(i, d), d.scheduleDetail ?? {});
+  const facts = scheduleFacts(input, d);
+  const outputs = allOutputs(d);
+  const heading = renderModules(PRE_SCHEDULE_PARTS.filter((m) => m.schedule === "H0"), facts, outputs);
+  if (d.formType === "990-N") return [...heading, summary];
+  const detail = renderModules(SCHEDULE_MODULES, facts, outputs);
+  const partsAfter = renderModules(POST_SCHEDULE_PARTS, facts, outputs);
+  const partVII = renderModules(PRE_SCHEDULE_PARTS.filter((m) => m.schedule === "VII"), facts, outputs);
 
   const schedules = table(
     "schedules",
@@ -293,22 +306,6 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
     d.programs.map((p) => ({ name: p.name, description: p.description, expenses: formatUsd(p.expenses) })),
     { note: `Mission: ${d.mission}` },
   );
-  const officers = table(
-    "officers",
-    "Officers, directors, and key employees (Part VII)",
-    [["name", "Name"], ["title", "Title"], ["hours", "Hours/week", true], ["compensation", "Compensation", true]],
-    i.officers.map((o) => ({ ...o, compensation: formatUsd(Math.round(o.compensation * 100)) })),
-  );
-  const governance = fields("governance", "Governance (Part VI)", [
-    ["Voting members", i.votingMembers, "line 1a"],
-    ["Independent voting members", i.independentMembers, "line 1b"],
-    ["Family or business relationships", i.familyRelationships, "line 2"],
-    ["Minutes kept", i.minutesKept, "line 8a"],
-    ["Conflict-of-interest policy", i.conflictPolicy, "line 12a"],
-    ["Whistleblower policy", i.whistleblowerPolicy, "line 13"],
-    ["Document retention policy", i.documentRetentionPolicy, "line 14"],
-    ["Independent compensation review", i.compensationProcess, "line 15a"],
-  ]);
   const scheduleO = table(
     "schedule-o",
     "Schedule O narratives",
@@ -326,13 +323,15 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
       .sort(([a], [b]) => a.localeCompare(b, "en", { numeric: true }))
       .map(([code, amount]) => ({ code, label: EZ_LABELS[code] ?? code, amount }));
     return [
+      ...heading,
       summary,
       schedules,
       programs,
-      officers,
-      governance,
+      ...partVII,
+      ...partsAfter,
       amountTable("ez", "Form 990-EZ Parts I–II", rows, "", "Balance sheet lines are end-of-year amounts."),
       ...detail,
+      scheduleO,
     ];
   }
 
@@ -344,11 +343,11 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
     ),
   ];
   return [
+    ...heading,
     summary,
     schedules,
     programs,
-    officers,
-    governance,
+    ...partVII,
     amountTable("part-viii", "Statement of Revenue (Part VIII)", revenueRows, "Total revenue (line 12)"),
     table(
       "part-ix",
@@ -386,6 +385,7 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
       ["Revenue less expenses", formatUsd(d.totalRevenue - d.totalExpenses)],
       ["Total net assets (line 32)", formatUsd(d.ledger.totals.endingNetAssets)],
     ]),
+    ...partsAfter,
     ...detail,
     scheduleO,
   ];
@@ -446,7 +446,10 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
       .filter((l) => l.type === "revenue")
       .reduce((s, l) => s + Math.max(0, lineAmount(ledger, l.code)), 0);
     const prior = input.prior.map((p) => p.totalRevenue).filter((v): v is Cents => v !== undefined);
-    const form = selectFormType(grossReceipts, t.assets, prior);
+    const taxYear = taxYearFor(input.period);
+    const taxYearNum = Number(taxYear.begin.slice(0, 4));
+    const priorYears = Math.max(0, taxYearNum - i.yearFormed);
+    const form = selectFormType(grossReceipts, t.assets, prior, priorYears);
 
     const functional = functionalExpenses(ledger, {
       program: i.programPct,
@@ -466,6 +469,33 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
       expenses: Math.round((programTotal * p.share) / 100),
     }));
 
+    const schedules = requiredSchedules(form.formType, { intake: i, ledger });
+    const facts: Omit<ScheduleFacts, "outputs"> = {
+      intake: i,
+      org: input.org,
+      period: input.period,
+      prior: input.prior,
+      ledger,
+      formType: form.formType,
+      taxYear: taxYearNum,
+      functional,
+      totalExpenses: t.functionalExpenses,
+      parts: new Set(schedules.map((s) => s.part).filter((p): p is string => !!p)),
+      requiredLetters: new Set(scheduleLetters(schedules)),
+      eventSplit,
+    };
+    // Heading and Part VII first, then the schedules, then the parts that read what was triggered.
+    const outputs: Record<string, unknown> = {};
+    buildModules(PRE_SCHEDULE_PARTS, facts, outputs);
+    if (form.formType !== "990-N") {
+      buildModules(SCHEDULE_MODULES, facts, outputs, new Set(scheduleLetters(schedules)));
+      buildModules(POST_SCHEDULE_PARTS, facts, outputs);
+    }
+    const partIds = new Set([...PRE_SCHEDULE_PARTS, ...POST_SCHEDULE_PARTS].map((m) => m.schedule));
+    const parts = Object.fromEntries(Object.entries(outputs).filter(([k]) => partIds.has(k)));
+    const scheduleDetail = Object.fromEntries(Object.entries(outputs).filter(([k]) => !partIds.has(k)));
+    const governanceO = (parts.VI as PartVIOut | undefined)?.scheduleO ?? [];
+
     const aiO = await ai.run(draftScheduleO, {
       formReviewProcess: i.formReviewProcess,
       conflictPolicy: i.conflictPolicy,
@@ -473,7 +503,7 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
       documentsAvailability: i.documentsAvailability,
       website: input.org.website,
     });
-    const scheduleO = aiO.entries.map((e) => ({ ref: e.ref, text: text[`scheduleO.${e.ref}`] ?? e.text }));
+    const scheduleO = [...aiO.entries, ...governanceO].map((e) => ({ ref: e.ref, text: text[`scheduleO.${e.ref}`] ?? e.text }));
     const mission = text.mission ?? i.mission;
 
     const source = (key: string, taskId?: string): EditableText["source"] => {
@@ -482,21 +512,6 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
       return ai.runs.find((r) => r.task === taskId)?.model === "fallback" ? "fallback" : "ai";
     };
 
-    const taxYear = taxYearFor(input.period);
-    const schedules = requiredSchedules(form.formType, { intake: i, ledger });
-    const scheduleDetail = buildScheduleDetail(
-      {
-        intake: i,
-        ledger,
-        formType: form.formType,
-        taxYear: Number(taxYear.begin.slice(0, 4)),
-        functional,
-        totalExpenses: t.functionalExpenses,
-        parts: new Set(schedules.map((s) => s.part).filter((p): p is string => !!p)),
-        eventSplit,
-      },
-      new Set(schedules.map((s) => s.schedule)),
-    );
 
     const data: Form990Data = {
       formType: form.formType,
@@ -514,6 +529,7 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
       scheduleO,
       eventSplit,
       scheduleDetail,
+      parts,
     };
 
     return {
@@ -532,7 +548,7 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
             key: `scheduleO.${e.ref}`,
             label: `Schedule O — ${e.ref}`,
             value: e.text,
-            source: source(`scheduleO.${e.ref}`, draftScheduleO.id),
+            source: source(`scheduleO.${e.ref}`, aiO.entries.some((a) => a.ref === e.ref) ? draftScheduleO.id : undefined),
           })),
         ],
       },
@@ -540,4 +556,5 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
   },
   rules,
   render,
+  export: exportReturn,
 });

@@ -1,16 +1,30 @@
 import type { FormSpec } from "@/core/fields";
 import { SCHEDULE_INTAKE } from "./schedules/index";
+import { HEADER_INTAKE, PART_INTAKE } from "./parts/index";
+import type { HeaderIntake, PartIVIntake, PartVIntake, PartVIIntake, PartXIIntake } from "./parts/index";
 import type { ScheduleAIntake } from "./schedules/schedule-a";
 import type { ScheduleBIntake } from "./schedules/schedule-b";
 import type { ScheduleCIntake } from "./schedules/schedule-c";
 import type { ScheduleDIntake } from "./schedules/schedule-d";
+import type { ScheduleEIntake } from "./schedules/schedule-e";
 import type { ScheduleFIntake } from "./schedules/schedule-f";
 import type { ScheduleGIntake } from "./schedules/schedule-g";
 import type { ScheduleIIntake } from "./schedules/schedule-i";
 import type { ScheduleJIntake } from "./schedules/schedule-j";
 import type { ScheduleLIntake } from "./schedules/schedule-l";
 import type { ScheduleMIntake } from "./schedules/schedule-m";
+import type { ScheduleNIntake } from "./schedules/schedule-n";
 import type { ScheduleRIntake } from "./schedules/schedule-r";
+
+export const POSITIONS = [
+  { value: "director", label: "Individual trustee or director" },
+  { value: "institutional_trustee", label: "Institutional trustee" },
+  { value: "officer", label: "Officer (president, treasurer, executive director, etc.)" },
+  { value: "key_employee", label: "Key employee (over $150,000, with organization-wide responsibility)" },
+  { value: "highest_compensated", label: "Highest compensated employee (over $100,000, not an officer)" },
+] as const;
+
+export type Position = (typeof POSITIONS)[number]["value"];
 
 export const YES_NO_SCHEDULE_TRIGGERS = [
   { name: "contributorOver5000", label: "Did any single donor give $5,000 or more (cash or property) this year?" },
@@ -25,6 +39,7 @@ export const YES_NO_SCHEDULE_TRIGGERS = [
 ] as const;
 
 export const FORM_990_INTAKE: FormSpec = [
+  ...HEADER_INTAKE,
   {
     title: "Organization",
     fields: [
@@ -77,12 +92,31 @@ export const FORM_990_INTAKE: FormSpec = [
         fields: [
           { name: "name", type: "text", label: "Name", required: true },
           { name: "title", type: "text", label: "Title", required: true },
+          { name: "position", type: "select", label: "Position", required: true, options: POSITIONS },
+          { name: "former", type: "checkbox", label: "Former officer, director, trustee, or key employee (left before this year)" },
           { name: "hours", type: "number", label: "Average hours per week", required: true, min: 0, max: 168 },
-          { name: "compensation", type: "money", label: "Reportable compensation ($)", required: true },
+          { name: "relatedHours", type: "number", label: "Hours per week for related organizations", min: 0, max: 168 },
+          { name: "compensation", type: "money", label: "Reportable compensation from the organization, W-2 box 5 or 1099 ($)", required: true },
+          { name: "relatedCompensation", type: "money", label: "Reportable compensation from related organizations ($)" },
+          { name: "otherCompensation", type: "money", label: "Estimated other compensation: retirement contributions and nontaxable benefits ($)" },
         ],
       },
       { name: "employees", type: "number", label: "Number of W-2 employees", required: true, min: 0 },
       { name: "volunteers", type: "number", label: "Approximate number of volunteers", min: 0 },
+      { name: "unrelatedCompensation", type: "yesno", label: "Did anyone listed receive compensation from an unrelated organization or individual for services to this organization?", required: true },
+      {
+        name: "contractors",
+        type: "list",
+        label: "Independent contractors paid more than $100,000 (the five highest)",
+        rows: 5,
+        fields: [
+          { name: "name", type: "text", label: "Name", required: true },
+          { name: "address", type: "text", label: "Business address", required: true },
+          { name: "service", type: "text", label: "Type of service", required: true },
+          { name: "amount", type: "money", label: "Compensation ($)", required: true },
+        ],
+      },
+      { name: "contractorsOver100k", type: "number", label: "Total number of independent contractors paid more than $100,000", min: 0 },
     ],
   },
   {
@@ -126,20 +160,35 @@ export const FORM_990_INTAKE: FormSpec = [
       { name: "fundraisingPct", type: "percent", label: "Fundraising (%)", required: true },
     ],
   },
+  ...PART_INTAKE,
   ...SCHEDULE_INTAKE,
 ];
 
 /** Core answers plus the detail each schedule needs (optional; schedule rules require it when triggered). */
 export interface Form990Intake
-  extends ScheduleAIntake, ScheduleBIntake, ScheduleCIntake, ScheduleDIntake, ScheduleFIntake, ScheduleGIntake,
-    ScheduleIIntake, ScheduleJIntake, ScheduleLIntake, ScheduleMIntake, ScheduleRIntake {
+  extends HeaderIntake, PartIVIntake, PartVIntake, PartVIIntake, PartXIIntake,
+    ScheduleAIntake, ScheduleBIntake, ScheduleCIntake, ScheduleDIntake, ScheduleEIntake, ScheduleFIntake, ScheduleGIntake,
+    ScheduleIIntake, ScheduleJIntake, ScheduleLIntake, ScheduleMIntake, ScheduleNIntake, ScheduleRIntake {
   subsection: "501c3" | "501c4" | "501c6" | "501c7" | "other";
   privateFoundation: boolean;
   mission: string;
   programs: { name: string; description: string; beneficiaries?: string; share: number }[];
-  officers: { name: string; title: string; hours: number; compensation: number }[];
+  officers: {
+    name: string;
+    title: string;
+    position: Position;
+    former?: boolean;
+    hours: number;
+    relatedHours?: number;
+    compensation: number;
+    relatedCompensation?: number;
+    otherCompensation?: number;
+  }[];
   employees: number;
   volunteers?: number;
+  unrelatedCompensation: boolean;
+  contractors?: { name: string; address: string; service: string; amount: number }[];
+  contractorsOver100k?: number;
   votingMembers: number;
   independentMembers: number;
   familyRelationships: boolean;

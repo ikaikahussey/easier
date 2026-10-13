@@ -1,6 +1,6 @@
 import type { FormSection } from "@/core/fields";
 import { formatUsd, type Cents } from "@/core/money";
-import type { ReviewSection } from "@/core/product";
+import type { OrgProfile, PriorYear, ReviewSection } from "@/core/product";
 import type { Rule } from "@/core/rules";
 import type { NonprofitLedger } from "@/domains/nonprofit/ledger";
 import { lineAmount } from "@/domains/nonprofit/ledger";
@@ -14,6 +14,10 @@ export const cents = (dollars: number | undefined): Cents => Math.round((dollars
 /** Everything a schedule may read. Outputs of schedules built earlier are in `outputs`. */
 export interface ScheduleFacts {
   intake: Form990Intake;
+  org: OrgProfile;
+  /** Fiscal year end, ISO date. */
+  period: string;
+  prior: PriorYear[];
   ledger: NonprofitLedger;
   formType: FormType;
   /** First calendar year of the tax year (the year printed on the form). */
@@ -22,6 +26,8 @@ export interface ScheduleFacts {
   totalExpenses: Cents;
   /** Triggered schedule parts, e.g. "G-II" (from the Part IV checklist). */
   parts: Set<string>;
+  /** Triggered schedule letters. */
+  requiredLetters: Set<string>;
   /** Event contributions moved from Part VIII line 8a to line 1c. */
   eventSplit: Cents;
   outputs: Partial<Record<string, unknown>>;
@@ -37,6 +43,7 @@ export interface ScheduleRuleContext<O> {
  * the checks a reviewer must clear, and the worksheet sections it renders.
  */
 export interface ScheduleModule<O = unknown> {
+  /** Schedule letter, or a core-form part id such as "IV". */
   schedule: string;
   title: string;
   /** Intake sections shown to the client (optional fields; rules enforce them when the schedule applies). */
