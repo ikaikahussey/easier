@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { parseForm } from "@/core/fields";
 import { consumeLogin, joinWaitlist, requestLogin, sendLoginLink, type WaitlistKind } from "@/core/services/auth";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/core/services/context";
-import { claim, createEngagement, saveReview, transition, uploadDocument, MAX_UPLOAD_BYTES } from "@/core/services/engagements";
+import { claim, createEngagement, saveReview, transition, updateIntake, uploadDocument, MAX_UPLOAD_BYTES } from "@/core/services/engagements";
 import { createOrganization } from "@/core/services/organizations";
 import { WorkflowError, type Action } from "@/core/workflow";
 import { CryptoError } from "@/core/crypto";
@@ -104,6 +104,23 @@ export async function createEngagementAction(_prev: FormState, fd: FormData): Pr
     for (const [k, v] of fd.entries()) if (typeof v === "string") values[k] = v;
     return { error: message(err), values };
   }
+  redirect(`/engagements/${id}`);
+}
+
+export async function updateIntakeAction(_prev: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor();
+  const id = str(fd, "engagementId");
+  const product = getProduct(str(fd, "product"));
+  try {
+    const parsed = parseForm(fd, product.intake);
+    if (!parsed.ok) throw new ValidationError(parsed.errors);
+    await updateIntake(actor, id, parsed.data);
+  } catch (err) {
+    const values: Record<string, string> = {};
+    for (const [k, v] of fd.entries()) if (typeof v === "string") values[k] = v;
+    return { error: message(err), values };
+  }
+  revalidatePath(`/engagements/${id}`);
   redirect(`/engagements/${id}`);
 }
 

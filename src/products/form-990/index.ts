@@ -12,6 +12,13 @@ import { columnTotals, functionalExpenses, type FunctionalRow } from "./allocati
 import { selectFormType, type FormType } from "./form-type";
 import { FORM_990_INTAKE, type Form990Intake } from "./intake";
 import { requiredSchedules, type RequiredSchedule } from "./schedules";
+import {
+  applyEventSplit,
+  buildScheduleDetail,
+  renderScheduleDetail,
+  scheduleRules,
+  type ScheduleFacts,
+} from "./schedules/index";
 
 export interface Form990Data {
   formType: FormType;
@@ -27,6 +34,10 @@ export interface Form990Data {
   mission: string;
   programs: { name: string; description: string; expenses: Cents }[];
   scheduleO: { ref: string; text: string }[];
+  /** Event contributions moved from Part VIII line 8a to line 1c (Schedule G detail). */
+  eventSplit: Cents;
+  /** Prepared schedules keyed by letter (A, B, C, D, F, G, I, J, L, M, R). */
+  scheduleDetail: Record<string, unknown>;
 }
 
 /** Placeholder list prices in cents; adjust after pilot pricing tests. */
@@ -85,6 +96,21 @@ export function form990Labor(w: Form990Workload): LaborTask[] {
 
 type Ctx = RuleContext<Form990Intake, Form990Data>;
 
+/** The facts schedule modules read, rebuilt from a finished draft. */
+function scheduleFacts(intake: Form990Intake, d: Form990Data): ScheduleFacts {
+  return {
+    intake,
+    ledger: d.ledger,
+    formType: d.formType,
+    taxYear: Number(d.taxYear.begin.slice(0, 4)),
+    functional: d.functional,
+    totalExpenses: d.totalExpenses,
+    parts: new Set(d.schedules.map((s) => s.part).filter((p): p is string => !!p)),
+    eventSplit: d.eventSplit ?? 0,
+    outputs: d.scheduleDetail ?? {},
+  };
+}
+
 function taxYearFor(end: string) {
   const e = parseIsoDate(end);
   const begin = new Date(Date.UTC(e.getUTCFullYear() - 1, e.getUTCMonth(), e.getUTCDate() + 1));
@@ -95,6 +121,7 @@ const pctOff = (a: Cents, b: Cents) => (b === 0 ? (a === 0 ? 0 : Infinity) : Mat
 
 const rules: Rule<Ctx>[] = [
   ...nonprofitLedgerRules<Ctx>((c) => c.data.ledger),
+  ...scheduleRules<Ctx>(({ input, data }) => ({ facts: scheduleFacts(input.intake, data), outputs: data.scheduleDetail ?? {} })),
   {
     id: "f990.private_foundation",
     severity: "error",
@@ -251,6 +278,7 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
     ["Net assets (end of year)", formatUsd(d.ledger.totals.endingNetAssets), "Part I, line 22"],
   ]);
   if (d.formType === "990-N") return [summary];
+  const detail = renderScheduleDetail(scheduleFacts(i, d), d.scheduleDetail ?? {});
 
   const schedules = table(
     "schedules",
@@ -304,6 +332,7 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
       officers,
       governance,
       amountTable("ez", "Form 990-EZ Parts I–II", rows, "", "Balance sheet lines are end-of-year amounts."),
+      ...detail,
     ];
   }
 
@@ -357,6 +386,7 @@ function render(d: Form990Data, input: { intake: Form990Intake }): ReviewSection
       ["Revenue less expenses", formatUsd(d.totalRevenue - d.totalExpenses)],
       ["Total net assets (line 32)", formatUsd(d.ledger.totals.endingNetAssets)],
     ]),
+    ...detail,
     scheduleO,
   ];
 }
@@ -405,8 +435,12 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
     ),
 
   async build(input, ai) {
-    const { ledger, editable } = await loadNonprofitLedger(input, ai);
+    const loaded = await loadNonprofitLedger(input, ai);
     const i = input.intake;
+    // Move event contributions to line 1c before anything reads revenue lines.
+    const ledger = applyEventSplit(loaded.ledger, i.events);
+    const editable = loaded.editable;
+    const eventSplit = (loaded.ledger.lines["VIII.8a"] ?? 0) - (ledger.lines["VIII.8a"] ?? 0);
     const t = ledger.totals;
     const grossReceipts = NONPROFIT_CATALOG.lines
       .filter((l) => l.type === "revenue")
@@ -448,20 +482,38 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
       return ai.runs.find((r) => r.task === taskId)?.model === "fallback" ? "fallback" : "ai";
     };
 
+    const taxYear = taxYearFor(input.period);
+    const schedules = requiredSchedules(form.formType, { intake: i, ledger });
+    const scheduleDetail = buildScheduleDetail(
+      {
+        intake: i,
+        ledger,
+        formType: form.formType,
+        taxYear: Number(taxYear.begin.slice(0, 4)),
+        functional,
+        totalExpenses: t.functionalExpenses,
+        parts: new Set(schedules.map((s) => s.part).filter((p): p is string => !!p)),
+        eventSplit,
+      },
+      new Set(schedules.map((s) => s.schedule)),
+    );
+
     const data: Form990Data = {
       formType: form.formType,
       formReason: form.reason,
       usedAverage: form.usedAverage,
-      taxYear: taxYearFor(input.period),
+      taxYear,
       ledger,
       grossReceipts,
       totalRevenue: t.grossRevenue - t.nettedExpenses,
       totalExpenses: t.functionalExpenses,
       functional,
-      schedules: requiredSchedules(form.formType, { intake: i, ledger }),
+      schedules,
       mission,
       programs,
       scheduleO,
+      eventSplit,
+      scheduleDetail,
     };
 
     return {

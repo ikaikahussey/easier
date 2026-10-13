@@ -5,7 +5,7 @@ import { parseCsv } from "@/core/ledger/csv";
 import { parseTrialBalance } from "@/core/ledger/trial-balance";
 import { classifyAccounts } from "@/core/ledger/catalog";
 import { deadline, legalHolidays } from "@/core/deadlines";
-import { formDataToObject, parseForm, type FormSpec } from "@/core/fields";
+import { formDataToObject, objectToFormValues, parseForm, type FormSpec } from "@/core/fields";
 import { availableActions, nextStatus, WorkflowError } from "@/core/workflow";
 import { runRules, adaptRules } from "@/core/rules";
 import { AiRunner, type AiTask, type Llm } from "@/core/ai/llm";
@@ -128,6 +128,15 @@ describe("declarative fields", () => {
       expect(r.errors.some((e) => e.startsWith("Rows › row 1 › N"))).toBe(true);
     }
   });
+  it("round-trips saved answers back into form values", () => {
+    const saved = { name: "Ann", ok: false, agree: true, rows: [{ x: "a", n: 12.5 }, { x: "b", n: 3 }] };
+    const values = objectToFormValues(form[0]!.fields, saved);
+    expect(values).toEqual({ name: "Ann", ok: "no", agree: "on", "rows.0.x": "a", "rows.0.n": "12.5", "rows.1.x": "b", "rows.1.n": "3" });
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(values)) fd.set(k, v);
+    expect(parseForm(fd, form)).toEqual({ ok: true, data: saved });
+  });
+
   it("maps list fields to row-indexed names", () => {
     const fd = new FormData();
     fd.set("rows.2.x", "z");

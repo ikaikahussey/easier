@@ -10,6 +10,7 @@ import {
   listEngagements,
   saveReview,
   transition,
+  updateIntake,
   uploadDocument,
 } from "@/core/services/engagements";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/core/services/context";
@@ -71,6 +72,18 @@ describe("engagement lifecycle", () => {
     );
   });
 
+  it("lets the client revise answers before review, and no one else", async () => {
+    const revised = { ...intake990, unusualGrants: 2500 };
+    await expect(updateIntake(alice, engA, { ...revised, mission: "" })).rejects.toBeInstanceOf(ValidationError);
+    await expect(updateIntake(bob, engA, revised)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(updateIntake(rita, engA, revised)).rejects.toBeInstanceOf(ForbiddenError);
+    await updateIntake(alice, engA, revised);
+    const d = await getEngagement(alice, engA);
+    expect((d.intake as typeof revised).unusualGrants).toBe(2500);
+    expect(d.events.map((e) => e.type)).toContain("intake_updated");
+    await updateIntake(alice, engA, intake990);
+  });
+
   it("submit builds an AI draft and moves to review", async () => {
     expect(await transition(alice, engA, "submit")).toBe("in_review");
     const d = await getEngagement(alice, engA);
@@ -83,6 +96,7 @@ describe("engagement lifecycle", () => {
     expect(d.dueDate).toBe("2026-05-15");
     // Prior-year public filing feeds the variance check.
     expect(d.draft!.snapshot.findings.map((f) => f.ruleId)).not.toContain("f990.prior_year_variance");
+    await expect(updateIntake(alice, engA, intake990)).rejects.toThrow(/can no longer be changed/);
   });
 
   it("unclaimed reviewers see queue metadata only", async () => {

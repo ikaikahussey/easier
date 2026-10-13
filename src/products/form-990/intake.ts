@@ -1,4 +1,16 @@
 import type { FormSpec } from "@/core/fields";
+import { SCHEDULE_INTAKE } from "./schedules/index";
+import type { ScheduleAIntake } from "./schedules/schedule-a";
+import type { ScheduleBIntake } from "./schedules/schedule-b";
+import type { ScheduleCIntake } from "./schedules/schedule-c";
+import type { ScheduleDIntake } from "./schedules/schedule-d";
+import type { ScheduleFIntake } from "./schedules/schedule-f";
+import type { ScheduleGIntake } from "./schedules/schedule-g";
+import type { ScheduleIIntake } from "./schedules/schedule-i";
+import type { ScheduleJIntake } from "./schedules/schedule-j";
+import type { ScheduleLIntake } from "./schedules/schedule-l";
+import type { ScheduleMIntake } from "./schedules/schedule-m";
+import type { ScheduleRIntake } from "./schedules/schedule-r";
 
 export const YES_NO_SCHEDULE_TRIGGERS = [
   { name: "contributorOver5000", label: "Did any single donor give $5,000 or more (cash or property) this year?" },
@@ -114,9 +126,13 @@ export const FORM_990_INTAKE: FormSpec = [
       { name: "fundraisingPct", type: "percent", label: "Fundraising (%)", required: true },
     ],
   },
+  ...SCHEDULE_INTAKE,
 ];
 
-export interface Form990Intake {
+/** Core answers plus the detail each schedule needs (optional; schedule rules require it when triggered). */
+export interface Form990Intake
+  extends ScheduleAIntake, ScheduleBIntake, ScheduleCIntake, ScheduleDIntake, ScheduleFIntake, ScheduleGIntake,
+    ScheduleIIntake, ScheduleJIntake, ScheduleLIntake, ScheduleMIntake, ScheduleRIntake {
   subsection: "501c3" | "501c4" | "501c6" | "501c7" | "other";
   privateFoundation: boolean;
   mission: string;

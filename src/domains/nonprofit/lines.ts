@@ -25,6 +25,8 @@ export const NONPROFIT_LINES: NonprofitLine[] = [
   // Part VIII — Revenue
   L("VIII.1a", "Federated campaigns", "revenue", "EZ.1", ["united way", "federated campaign", "combined federal campaign"]),
   L("VIII.1b", "Membership dues", "revenue", "EZ.3", ["membership dues", "member dues", "dues income"]),
+  // Contribution portion of fundraising event receipts; set from Schedule G detail, not from account names.
+  L("VIII.1c", "Fundraising events (contributions)", "revenue", "EZ.1", []),
   L("VIII.1d", "Related organizations", "revenue", "EZ.1", ["related organization"]),
   L("VIII.1e", "Government grants (contributions)", "revenue", "EZ.1", [
     "government grant", "federal grant", "state grant", "county grant", "city grant", "government contribution",

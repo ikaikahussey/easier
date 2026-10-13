@@ -30,11 +30,22 @@ src/core/            product-agnostic platform
   services/          organizations, engagements, auth (the only path from UI to data)
 src/domains/nonprofit  990-keyed line catalog shared by Books and Form 990
 src/products/        form-990, books, and the registry (index.ts)
+  form-990/schedules/  one module per IRS schedule (A, B, C, D, F, G, I, J, L, M, R): intake, computation, rules, worksheet
 src/app, src/ui      Next.js pages and generic components
 drizzle/             SQL migrations, including 0001_tenant_isolation.sql (RLS)
 ```
 
 **Adding a product** means writing a module that satisfies `ProductDefinition` (intake spec, documents, `build`, `rules`, `render`, `quote`, optional `deadline`) and listing it in `src/products/index.ts`. Intake forms, the review workspace, workflow, audit trail, encryption, and pricing display come from the platform.
+
+**Form 990 schedules.** The Part IV checklist (`form-990/schedules.ts`) decides which schedules apply. Each schedule module (`form-990/schedules/`) declares the client questions it needs, computes its figures from the ledger and those answers, checks them, and renders worksheet sections. Highlights:
+
+- Schedule A computes the five-year public support tests (Part II for 170(b)(1)(A)(vi), Part III for 509(a)(2)), including the 2% donor limit, the $5,000/1% payer limit, disqualified persons, the first-five-years rule, and the 10% facts-and-circumstances test.
+- Schedule B applies the general rule or, for organizations that pass the 33⅓% test, the special rule (greater of $5,000 or 2% of line 1h).
+- Schedule G splits event receipts: the contribution portion moves from Part VIII line 8a to line 1c before anything else reads revenue.
+- Schedule D Part VI is built from the fixed asset accounts and must tie to Part X line 10c; Parts XI–XII reconcile audited statements to Part I lines 12 and 18.
+- Schedules C (501(h) nontaxable amounts), I, J, L, M, R, and F list and check the detail and tie it to the books where possible.
+
+Schedule questions are optional in the intake form (folded by default) and become blocking findings when the schedule applies. Clients can revise their answers until the engagement goes to review. Not covered: Schedules E, H, K, N; Schedule A Part IV (supporting organizations); the four-year averages in Schedule C Part II-A; Schedule R Part V.
 
 **Classification pipeline:** reviewer override → keyword rule → AI (validated against the account type) → catch-all line flagged for review. AI outputs are cached per draft by input hash, so reviewer edits do not trigger new model calls unless an AI input changed. Without `ANTHROPIC_API_KEY`, deterministic fallbacks run and unmatched accounts are routed to the reviewer.
 
@@ -73,6 +84,7 @@ npm run check      # typecheck → unit/integration tests → production build �
 ```
 
 - `tests/core.test.ts`, `tests/products.test.ts`: parsing, classification, deadlines, rules, form selection, schedules, allocation, pledge.
+- `tests/schedules.test.ts`: each schedule's computation against figures worked by hand from the fixtures.
 - `tests/services.test.ts`: full lifecycle plus tenant isolation against real Postgres (PGlite) with RLS.
 - `scripts/e2e.mjs`: drives the production build through plain HTML forms (no JavaScript) for sign-in, intake, upload, AI draft, reviewer claim, reclassify, and approve, plus cross-tenant 404s.
 
@@ -82,5 +94,5 @@ Set the variables in `.env.example`. `DATABASE_URL`, `DATA_ENCRYPTION_KEY` (`ope
 
 ## Not yet built
 
-- IRS e-file transmission (MeF) and Form 8879-TE e-signature. Approved work produces a review package today.
+- IRS e-file transmission (MeF) and Form 8879-TE e-signature. Approved work produces a review package today. No vendor yet offers a verified API for full 990/990-EZ data; see the e-file options note in the project.
 - Payments, multistate charity registration, document (PDF) intake, and reviewer credential verification.

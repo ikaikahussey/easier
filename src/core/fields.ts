@@ -24,6 +24,8 @@ export type FieldSpec =
 export interface FormSection {
   title: string;
   help?: string;
+  /** Render folded; for questions that apply only to some clients. */
+  collapsible?: boolean;
   fields: FieldSpec[];
 }
 
@@ -138,4 +140,22 @@ function labelFor(form: FormSpec, path: PropertyKey[]): string {
     if (f.type === "list") fields = f.fields;
   }
   return labels.join(" › ") || path.join(".");
+}
+
+/** Inverse of formDataToObject: saved answers → form field values, for editing a submitted form. */
+export function objectToFormValues(fields: FieldSpec[], obj: Record<string, unknown> | undefined, prefix = ""): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!obj) return out;
+  for (const f of fields) {
+    const key = prefix + f.name;
+    const v = obj[f.name];
+    if (v === undefined || v === null) continue;
+    if (f.type === "list") {
+      if (Array.isArray(v)) v.forEach((row, i) => Object.assign(out, objectToFormValues(f.fields, row as Record<string, unknown>, `${key}.${i}.`)));
+    } else if (f.type === "yesno") out[key] = v ? "yes" : "no";
+    else if (f.type === "checkbox") {
+      if (v) out[key] = "on";
+    } else out[key] = String(v);
+  }
+  return out;
 }
