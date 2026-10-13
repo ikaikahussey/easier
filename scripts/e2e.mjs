@@ -193,15 +193,21 @@ async function main() {
     ["programs.1.share", "30"],
     ["officers.0.name", "Leilani Kahale"],
     ["officers.0.title", "Executive Director"],
+    ["officers.0.position", "officer"],
     ["officers.0.hours", "40"],
     ["officers.0.compensation", "95000"],
     ["officers.1.name", "Sam Ortiz"],
     ["officers.1.title", "Board Chair"],
+    ["officers.1.position", "director"],
     ["officers.1.hours", "2"],
     ["officers.1.compensation", "0"],
     ["employees", "7"],
-    ["votingMembers", "9"],
-    ["independentMembers", "9"],
+    no("unrelatedCompensation"),
+    ["street", "1234 Kalihi St"], ["city", "Honolulu"], ["state", "HI"], ["zip", "96819"], ["phone", "808-555-0100"],
+    ["principalOfficer", "Leilani Kahale"], ["yearFormed", "2012"], ["domicileState", "HI"],
+    ["orgForm", "corporation"], ["accountingMethod", "accrual"],
+    ["votingMembers", "1"],
+    ["independentMembers", "1"],
     no("familyRelationships"), yes("minutesKept"), yes("conflictPolicy"), yes("whistleblowerPolicy"),
     no("documentRetentionPolicy"), yes("compensationProcess"),
     ["formReviewProcess", "The Finance Committee reviews the draft before filing."],
@@ -243,6 +249,12 @@ async function main() {
     "events.0.name": "Annual Gala", "events.0.grossReceipts": "30000", "events.0.contributions": "18000", "events.0.food": "6000", "events.0.rent": "3000",
     grantRecords: "yes",
     grantMonitoring: "Scholarships are paid directly to colleges after enrollment is verified.",
+    // Parts V, VI, XII
+    forms1096Count: "0", backupWithholding: "yes", employmentReturnsFiled: "yes",
+    managementCompany: "no", governingDocChanges: "no", assetDiversion: "no", hasMembers: "no", membersElect: "no", membersApprove: "no",
+    committeeMinutes: "yes", unreachableOfficer: "no", localChapters: "no", boardCopyBeforeFiling: "yes", annualDisclosure: "yes",
+    otherOfficerCompProcess: "yes", jointVenture: "no", statesFiled: "HI", booksCustodianName: "Mei Tanaka",
+    compiledOrReviewed: "no", singleAuditRequired: "no",
     "grantsToIndividuals.0.type": "College scholarships", "grantsToIndividuals.0.recipients": "12", "grantsToIndividuals.0.cash": "12000",
   });
   assert.equal(page.url, engagementUrl, `answers were not saved: ${text(page).slice(0, 300)}`);
@@ -282,6 +294,15 @@ async function main() {
   assert.doesNotMatch(text(review), /could not be classified/);
   review = await rita.submit(review, (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "approve");
   assert.match(text(review), /Approved/);
+
+  // The approved return downloads as line-numbered data.
+  const exported = await rita.get(`/engagements/${engagementId}/package/return.json`);
+  assert.equal(exported.status, 200, "return.json not served");
+  const ret = JSON.parse(exported.html);
+  assert.equal(ret.form, "990");
+  assert.equal(ret.partI["12_totalRevenue"].currentYear, 487500);
+  assert.equal(ret.form8879TE.partI["1b_totalRevenue"], 487500);
+  assert.ok(Array.isArray(ret.partIV) && ret.partIV.length === 53, "Part IV missing from export");
 
   // Client sees the signed package; edited narrative appears
   const pkg = await alice.get(`/engagements/${engagementId}/package`);

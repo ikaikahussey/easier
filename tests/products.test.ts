@@ -118,8 +118,9 @@ describe("Form 990 draft (full return)", async () => {
 
   it("renders full-return worksheet sections", () => {
     expect(draft.sections.map((s) => s.id)).toEqual([
-      "summary", "schedules", "programs", "officers", "governance", "part-viii", "part-ix",
+      "heading", "summary", "schedules", "programs", "part-vii-a", "part-vii-q", "part-vii-b", "part-viii", "part-ix",
       "part-x-assets", "part-x-liabilities", "part-x-net-assets",
+      "part-iv", "part-v", "part-vi-a", "part-vi-b", "part-vi-c", "part-xi", "part-xii",
       "sched-a-1", "sched-a-2a", "sched-a-2b", "sched-a-2c", "sched-a-2-excess",
       "sched-b-rule", "sched-b-1",
       "sched-d-6",
@@ -159,7 +160,7 @@ describe("Form 990 draft (full return)", async () => {
     const bad = await buildDraft(
       form990,
       input990("tb-990.csv", {
-        intake: { ...intake990, programPct: 50, independentMembers: 12, officers: [{ name: "A", title: "Chair", hours: 1, compensation: 0 }] },
+        intake: { ...intake990, programPct: 50, independentMembers: 12, officers: [{ name: "A", title: "Chair", position: "director" as const, hours: 1, compensation: 0 }] },
       }),
     );
     expect(ids(bad.findings)).toEqual(expect.arrayContaining(["f990.cost_split", "f990.board_independence", "f990.officers_listed"]));

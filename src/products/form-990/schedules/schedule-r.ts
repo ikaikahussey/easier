@@ -31,13 +31,44 @@ export interface RelatedOrg {
   controlled512b13?: boolean;
 }
 
+export const RELATED_TRANSACTION_TYPES = [
+  { value: "a", label: "Receipt of interest, annuities, royalties, or rent from a controlled entity" },
+  { value: "b", label: "Gift, grant, or capital contribution to related organization" },
+  { value: "c", label: "Gift, grant, or capital contribution from related organization" },
+  { value: "d", label: "Loans or loan guarantees to or for related organization" },
+  { value: "e", label: "Loans or loan guarantees by related organization" },
+  { value: "f", label: "Dividends from related organization" },
+  { value: "g", label: "Sale of assets to related organization" },
+  { value: "h", label: "Purchase of assets from related organization" },
+  { value: "i", label: "Exchange of assets with related organization" },
+  { value: "j", label: "Lease of facilities, equipment, or other assets to related organization" },
+  { value: "k", label: "Lease of facilities, equipment, or other assets from related organization" },
+  { value: "l", label: "Performance of services or membership or fundraising solicitations for related organization" },
+  { value: "m", label: "Performance of services or membership or fundraising solicitations by related organization" },
+  { value: "n", label: "Sharing of facilities, equipment, mailing lists, or other assets with related organization" },
+  { value: "o", label: "Sharing of paid employees with related organization" },
+  { value: "p", label: "Reimbursement paid to related organization for expenses" },
+  { value: "q", label: "Reimbursement paid by related organization for expenses" },
+  { value: "r", label: "Other transfer of cash or property to related organization" },
+  { value: "s", label: "Other transfer of cash or property from related organization" },
+] as const;
+
+export interface RelatedTransaction {
+  organization: string;
+  type: (typeof RELATED_TRANSACTION_TYPES)[number]["value"];
+  amount: number;
+  method: string;
+}
+
 export interface ScheduleRIntake {
   related?: RelatedOrg[];
   relatedTransactions?: string;
+  relatedTransactionList?: RelatedTransaction[];
 }
 
 export interface ScheduleROut {
   byPart: Record<"I" | "II" | "III" | "IV", (RelatedOrg & { incomeC: Cents; assetsC: Cents })[]>;
+  partV: { line1: Record<string, boolean>; line2: (Omit<RelatedTransaction, "amount"> & { amountC: Cents; label: string })[] };
 }
 
 const PART: Record<RelatedOrg["kind"], keyof ScheduleROut["byPart"]> = { disregarded: "I", exempt: "II", partnership: "III", corporation: "IV" };
@@ -71,7 +102,19 @@ export const scheduleR = defineSchedule<ScheduleROut>({
             { name: "controlled512b13", type: "checkbox", label: "Controlled entity under section 512(b)(13)" },
           ],
         },
-        { name: "relatedTransactions", type: "textarea", label: "Transactions with related organizations this year (loans, grants, sales, shared employees, reimbursements)" },
+        { name: "relatedTransactions", type: "textarea", label: "Summary of transactions with related organizations this year" },
+        {
+          name: "relatedTransactionList",
+          type: "list",
+          label: "Each transaction with a related organization over $50,000 (Part V line 2)",
+          rows: 5,
+          fields: [
+            { name: "organization", type: "text", label: "Related organization", required: true },
+            { name: "type", type: "select", label: "Transaction type (Part V line 1)", required: true, options: RELATED_TRANSACTION_TYPES },
+            { name: "amount", type: "money", label: "Amount involved ($)", required: true },
+            { name: "method", type: "text", label: "Method of determining the amount (cost, fair market value, arm's length)", required: true },
+          ],
+        },
       ],
     },
   ],
@@ -79,7 +122,9 @@ export const scheduleR = defineSchedule<ScheduleROut>({
   build(f) {
     const byPart: ScheduleROut["byPart"] = { I: [], II: [], III: [], IV: [] };
     for (const r of f.intake.related ?? []) byPart[PART[r.kind]].push({ ...r, incomeC: cents(r.income), assetsC: cents(r.assets) });
-    return { byPart };
+    const list = (f.intake.relatedTransactionList ?? []).map(({ amount, ...t }) => ({ ...t, amountC: cents(amount), label: RELATED_TRANSACTION_TYPES.find((x) => x.value === t.type)?.label ?? t.type }));
+    const line1 = Object.fromEntries(RELATED_TRANSACTION_TYPES.map((t) => [t.value, list.some((x) => x.type === t.value)]));
+    return { byPart, partV: { line1, line2: list.filter((t) => t.amountC > 50_000_00) } };
   },
 
   rules: [
@@ -99,13 +144,15 @@ export const scheduleR = defineSchedule<ScheduleROut>({
     },
     {
       id: "r.transactions",
-      severity: "info",
+      severity: "warning",
       ref: "Schedule R, Part V",
-      description: "Transactions with related organizations",
-      check: ({ facts }) =>
-        facts.intake.relatedTransactions
-          ? "Report the related-organization transactions in Part V (line 1 checklist and line 2 amounts) by hand"
-          : "Confirm with the client that there were no transactions with related organizations (Part V)",
+      description: "Transactions with related organizations are itemized",
+      check: ({ out, facts }) =>
+        facts.intake.relatedTransactions && !(facts.intake.relatedTransactionList ?? []).length
+          ? "Transactions with related organizations are described but not itemized; list each one for Part V"
+          : !out.partV.line2.length && facts.parts.has("R-V")
+            ? "Part IV reports transactions with a controlled entity or transfers to a non-charitable related organization, but none over $50,000 is listed for Part V line 2"
+            : undefined,
     },
   ],
 
@@ -126,6 +173,10 @@ export const scheduleR = defineSchedule<ScheduleROut>({
       s.push(table("sched-r-4", "Schedule R Part IV: related corporations and trusts", [["name", "(a) Name, EIN, address"], ["activity", "(b) Activity"], ["domicile", "(c) Domicile"], ["control", "(d) Controlling entity"], ["income", "(f) Share of total income", true], ["assets", "(g) Share of end-of-year assets", true], ["b13", "(i) 512(b)(13)"]],
         out.byPart.IV.map((r) => ({ name: name(r), activity: r.activity, domicile: r.domicile, control: r.controllingEntity ?? "—", income: usd(r.incomeC), assets: usd(r.assetsC), b13: r.controlled512b13 ? "Yes" : "No" })),
         { note: "Column (e) type of entity (C corporation, S corporation, trust) and column (h) percentage ownership are completed by the reviewer." }));
+    if (Object.values(out.partV.line1).some(Boolean) || out.partV.line2.length)
+      s.push(table("sched-r-5", "Schedule R Part V: transactions with related organizations", [["line", "Line"], ["org", "(a) Related organization"], ["type", "(b) Transaction type"], ["amount", "(c) Amount involved", true], ["method", "(d) Method"]],
+        out.partV.line2.map((t, k) => ({ line: String(k + 1), org: t.organization, type: `1${t.type}: ${t.label}`, amount: usd(t.amountC), method: t.method })),
+        { note: `Line 1 Yes answers: ${Object.entries(out.partV.line1).filter(([, v]) => v).map(([k]) => `1${k}`).join(", ") || "none"}.` }));
     return s.length ? s : [table("sched-r", "Schedule R", [["status", "Status"]], [{ status: "No related organizations entered" }])];
   },
 });

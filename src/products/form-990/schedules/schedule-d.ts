@@ -58,8 +58,22 @@ interface Reconciliation {
   returnTotal: Cents;
 }
 
+export interface LineDetail {
+  rows: { description: string; amount: Cents }[];
+  total: Cents;
+  partX: Cents;
+}
+
 export interface ScheduleDOut {
   partVI?: { rows: PpeRow[]; total: Cents; partX: Cents; unassignedDepreciation: string[] };
+  /** Part VII: other securities (Part X line 12). */
+  partVII?: LineDetail;
+  /** Part VIII: program-related investments (Part X line 13). */
+  partVIII?: LineDetail;
+  /** Part IX: other assets (Part X line 15). */
+  partIX?: LineDetail;
+  /** Part X: other liabilities (Part X line 25). */
+  partXother?: LineDetail;
   partXI?: Reconciliation;
   partXII?: Reconciliation;
 }
@@ -97,6 +111,13 @@ function partVI(f: ScheduleFacts): NonNullable<ScheduleDOut["partVI"]> {
     partX: amt(f, "X.10"),
     unassignedDepreciation,
   };
+}
+
+/** Accounts mapped to one Part X line, as the detail that schedule part lists. */
+function lineDetail(f: ScheduleFacts, code: string): LineDetail {
+  const ids = new Set(f.ledger.mappings.filter((m) => m.line === code).map((m) => m.accountId));
+  const rows = f.ledger.tb.accounts.filter((a) => ids.has(a.id)).map((a) => ({ description: a.name, amount: a.balance }));
+  return { rows, total: rows.reduce((t, r) => t + r.amount, 0), partX: amt(f, code) };
 }
 
 function reconcile(
@@ -144,6 +165,10 @@ export const scheduleD = defineSchedule<ScheduleDOut>({
   build(f) {
     const out: ScheduleDOut = {};
     if (amt(f, "X.10") !== 0) out.partVI = partVI(f);
+    if (f.parts.has("D-VII")) out.partVII = lineDetail(f, "X.12");
+    if (f.parts.has("D-VIII")) out.partVIII = lineDetail(f, "X.13");
+    if (f.parts.has("D-IX")) out.partIX = lineDetail(f, "X.15");
+    if (f.parts.has("D-X")) out.partXother = lineDetail(f, "X.25");
     if (f.intake.auditedFinancials) {
       const items = f.intake.reconcilingItems ?? [];
       const revenue = f.ledger.totals.grossRevenue - f.ledger.totals.nettedExpenses;
@@ -221,7 +246,7 @@ export const scheduleD = defineSchedule<ScheduleDOut>({
     },
   ],
 
-  render(out) {
+  render(out, f) {
     const s: ReviewSection[] = [];
     if (out.partVI)
       s.push(
@@ -233,6 +258,19 @@ export const scheduleD = defineSchedule<ScheduleDOut>({
           { footer: { line: "", label: "Total (must equal Part X line 10c)", cost: "", depreciation: "", book: usd(out.partVI.total) } },
         ),
       );
+    for (const [id, title, part, line] of [
+      ["sched-d-7", "Schedule D Part VII: investments — other securities", out.partVII, "12"],
+      ["sched-d-8", "Schedule D Part VIII: investments — program related", out.partVIII, "13"],
+      ["sched-d-9", "Schedule D Part IX: other assets", out.partIX, "15"],
+      ["sched-d-10", "Schedule D Part X: other liabilities", out.partXother, "25"],
+    ] as const) {
+      if (!part) continue;
+      s.push(
+        table(id, title, [["description", "(a) Description"], ["amount", "(b) Book value", true]],
+          part.rows.map((r) => ({ description: r.description, amount: usd(r.amount) })),
+          { footer: { description: `Total (must equal Part X line ${line})`, amount: usd(part.total) }, note: line === "25" && f.intake.uncertainTaxPositions ? "Line 2: quote the financial statement footnote on uncertain tax positions (ASC 740)." : line === "12" || line === "13" ? "Column (c) method of valuation (cost or end-of-year market value) is completed by the reviewer." : undefined }),
+      );
+    }
     for (const [id, title, r, labels] of [
       ["sched-d-11", "Schedule D Part XI: revenue per audit to the return", out.partXI, ["Total revenue per audited statements", "Total revenue (Part I line 12)"]],
       ["sched-d-12", "Schedule D Part XII: expenses per audit to the return", out.partXII, ["Total expenses per audited statements", "Total expenses (Part I line 18)"]],

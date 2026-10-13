@@ -31,6 +31,8 @@ export interface ScheduleCIntake {
   grassrootsLobbying?: number;
   lobbyingActivities?: { method: (typeof LOBBYING_METHODS)[number]["value"]; amount?: number }[];
   lobbyingDescription?: string;
+  /** Prior three years of Part II-A figures, from prior Schedules C. */
+  lobbyingHistory?: { year: number; nontaxable: number; totalLobbying: number; grassrootsNontaxable: number; grassroots: number }[];
 }
 
 export interface ScheduleCOut {
@@ -42,6 +44,13 @@ export interface ScheduleCOut {
     nontaxable: Cents; grassrootsNontaxable: Cents; grassrootsExcess: Cents; lobbyingExcess: Cents;
   };
   partIIB?: { activities: { line: string; label: string; amount: Cents }[]; total: Cents };
+  /** Part II-A lines 2a–2f: four-year averaging period (section 501(h)(2)). */
+  averaging?: {
+    years: number[];
+    nontaxable: Cents[]; lobbyingCeiling: Cents; totalLobbying: Cents[];
+    grassrootsNontaxable: Cents[]; grassrootsCeiling: Cents; grassroots: Cents[];
+    exceeds: boolean;
+  };
   ledgerLobbying: Cents;
 }
 
@@ -84,6 +93,19 @@ export const scheduleC = defineSchedule<ScheduleCOut>({
           ],
         },
         { name: "lobbyingDescription", type: "textarea", label: "If not elected: describe the lobbying activities (reported in Part IV)" },
+        {
+          name: "lobbyingHistory",
+          type: "list",
+          label: "If elected: the prior three years from Schedule C Part II-A (lines 1f, 1c, 1g, 1a)",
+          rows: 3,
+          fields: [
+            { name: "year", type: "number", label: "Tax year", required: true, min: 1900, max: 2100 },
+            { name: "nontaxable", type: "money", label: "Lobbying nontaxable amount, line 1f ($)", required: true },
+            { name: "totalLobbying", type: "money", label: "Total lobbying expenditures, line 1c ($)", required: true },
+            { name: "grassrootsNontaxable", type: "money", label: "Grassroots nontaxable amount, line 1g ($)", required: true },
+            { name: "grassroots", type: "money", label: "Grassroots lobbying expenditures, line 1a ($)", required: true },
+          ],
+        },
       ],
     },
   ],
@@ -111,6 +133,21 @@ export const scheduleC = defineSchedule<ScheduleCOut>({
         exemptPurpose, nontaxable, grassrootsNontaxable,
         grassrootsExcess: Math.max(0, grassroots - grassrootsNontaxable),
         lobbyingExcess: Math.max(0, totalLobbying - nontaxable),
+      };
+      const hist = [...(i.lobbyingHistory ?? [])].sort((a, b) => a.year - b.year).slice(-3);
+      const years = [...hist.map((h) => h.year), f.taxYear];
+      const col = (pick: (h: NonNullable<ScheduleCIntake["lobbyingHistory"]>[number]) => number, current: Cents) => [...hist.map((h) => cents(pick(h))), current];
+      const nontaxableCol = col((h) => h.nontaxable, nontaxable);
+      const grassrootsNontaxableCol = col((h) => h.grassrootsNontaxable, grassrootsNontaxable);
+      const totalCol = col((h) => h.totalLobbying, totalLobbying);
+      const grassrootsCol = col((h) => h.grassroots, grassroots);
+      const sum = (a: Cents[]) => a.reduce((t, v) => t + v, 0);
+      const lobbyingCeiling = Math.round(sum(nontaxableCol) * 1.5);
+      const grassrootsCeiling = Math.round(sum(grassrootsNontaxableCol) * 1.5);
+      out.averaging = {
+        years, nontaxable: nontaxableCol, lobbyingCeiling, totalLobbying: totalCol,
+        grassrootsNontaxable: grassrootsNontaxableCol, grassrootsCeiling, grassroots: grassrootsCol,
+        exceeds: sum(totalCol) > lobbyingCeiling || sum(grassrootsCol) > grassrootsCeiling,
       };
     }
     if (out.election === "substantial_part") {
@@ -167,12 +204,24 @@ export const scheduleC = defineSchedule<ScheduleCOut>({
       },
     },
     {
-      id: "c.four_year_average",
-      severity: "info",
-      ref: "Schedule C, Part II-A, columns (a)–(e)",
-      description: "Electing organizations report four-year averages",
+      id: "c.four_year_history",
+      severity: "error",
+      ref: "Schedule C, Part II-A, lines 2a–2f",
+      description: "Electing organizations supply the prior three years",
+      check: ({ out, facts }) =>
+        out.partIIA && out.averaging && out.averaging.years.length < 4 && facts.taxYear - facts.intake.yearFormed >= 3
+          ? `Enter the prior three years of Schedule C Part II-A figures for the four-year averaging period (${out.averaging.years.length - 1} of 3 entered)`
+          : undefined,
+    },
+    {
+      id: "c.four_year_ceiling",
+      severity: "error",
+      ref: "Schedule C, Part II-A, lines 2b and 2e",
+      description: "Four-year lobbying totals stay within 150% of the nontaxable amounts",
       check: ({ out }) =>
-        out.partIIA ? "Complete the four-year averaging period in Part II-A from prior returns; this worksheet shows the current year" : undefined,
+        out.averaging?.exceeds
+          ? "Lobbying over the four-year averaging period exceeds 150% of the nontaxable amounts; the organization loses its 501(h) status and may lose exemption (section 501(h)(1)); consult counsel"
+          : undefined,
     },
     {
       id: "c.activities_listed",
@@ -231,6 +280,25 @@ export const scheduleC = defineSchedule<ScheduleCOut>({
           ["1h Grassroots over nontaxable", usd(p.grassrootsExcess)],
           ["1i Total lobbying over nontaxable", usd(p.lobbyingExcess)],
         ], "Exempt purpose expenditures are total functional expenses less investment management fees. Remove capital expenditures and costs of a separate fundraising unit if any."),
+      );
+      const a = out.averaging!;
+      const keys = a.years.map((_, k) => `y${k}`);
+      const row = (line: string, label: string, vals: Cents[], total: Cents) => ({ line, label, ...Object.fromEntries(vals.map((v, k) => [keys[k], usd(v)])), total: usd(total) });
+      s.push(
+        table(
+          "sched-c-2a-avg",
+          "Schedule C Part II-A, lines 2a–2f: four-year averaging period",
+          [["line", "Line"], ["label", "Description"], ...a.years.map((y, k) => [keys[k]!, `(${"abcd"[k]}) ${y}`, true] as [string, string, boolean]), ["total", "(e) Total", true]],
+          [
+            row("2a", "Lobbying nontaxable amount", a.nontaxable, a.nontaxable.reduce((t, v) => t + v, 0)),
+            row("2b", "Lobbying ceiling amount (150% of line 2a(e))", a.nontaxable.map(() => 0), a.lobbyingCeiling),
+            row("2c", "Total lobbying expenditures", a.totalLobbying, a.totalLobbying.reduce((t, v) => t + v, 0)),
+            row("2d", "Grassroots nontaxable amount", a.grassrootsNontaxable, a.grassrootsNontaxable.reduce((t, v) => t + v, 0)),
+            row("2e", "Grassroots ceiling amount (150% of line 2d(e))", a.grassrootsNontaxable.map(() => 0), a.grassrootsCeiling),
+            row("2f", "Grassroots lobbying expenditures", a.grassroots, a.grassroots.reduce((t, v) => t + v, 0)),
+          ],
+          { note: a.exceeds ? "The four-year totals exceed a ceiling." : "The four-year totals are within both ceilings." },
+        ),
       );
     }
     if (out.partIIB)

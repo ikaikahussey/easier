@@ -118,6 +118,8 @@ export const NONPROFIT_LINES: NonprofitLine[] = [
     "equipment", "furniture", "building", "land", "vehicle", "leasehold", "accumulated depreciation", "fixed asset",
   ]),
   L("X.11", "Investments — publicly traded securities", "asset", "EZ.22", ["investment", "brokerage", "stocks", "mutual fund", "securities"]),
+  L("X.12", "Investments — other securities", "asset", "EZ.22", ["alternative investment", "hedge fund", "private equity", "closely held", "partnership interest", "llc interest"]),
+  L("X.13", "Investments — program-related", "asset", "EZ.22", ["program-related investment", "program related investment", "pri "]),
   L("X.15", "Other assets", "asset", "EZ.24", ["deposit", "right of use", "other asset"]),
   L("X.17", "Accounts payable and accrued expenses", "liability", "EZ.26", [
     "accounts payable", "accrued", "payable", "credit card", "payroll liabilit",

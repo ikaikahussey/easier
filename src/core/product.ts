@@ -126,6 +126,8 @@ export interface ProductDefinition<I = any, D = any> {
   build: (input: BuildInput<I>, ai: AiRunner) => Promise<BuildResult<D>>;
   rules: Rule<RuleContext<I, D>>[];
   render: (data: D, input: BuildInput<I>) => ReviewSection[];
+  /** The finished work as structured data for the client or for filing software. */
+  export?: (data: D, input: BuildInput<I>, findings: Finding[]) => unknown;
 }
 
 export const defineProduct = <I, D>(p: ProductDefinition<I, D>): ProductDefinition<I, D> => p;
