@@ -231,6 +231,30 @@ export async function createEngagement(
   });
 }
 
+/** Clients may revise their answers until the engagement is in review (e.g. to add schedule detail). */
+export async function updateIntake(actor: Actor, engagementId: string, intake: unknown): Promise<void> {
+  if (isStaff(actor)) throw new ForbiddenError("Answers are edited by the client organization");
+  await withTenant(principal(actor), async (tx) => {
+    const { e } = await loadRow(tx, engagementId);
+    assertCanAct(actor, e);
+    if (!["awaiting_documents", "changes_requested"].includes(e.status))
+      throw new WorkflowError("Answers can no longer be changed for this engagement");
+    const product = getProduct(e.product);
+    const parsed = formSchema(product.intake).safeParse(intake);
+    if (!parsed.success) throw new ValidationError(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
+    const vault = await vaultFor(tx, e.orgId);
+    await tx
+      .update(engagements)
+      .set({
+        intakeEnc: vault.seal(parsed.data, ctx.intake(e.id)),
+        quote: priceEngagement(product, parsed.data),
+        updatedAt: new Date(),
+      })
+      .where(eq(engagements.id, e.id));
+    await logEvent(tx, vault, e, actor, "intake_updated");
+  });
+}
+
 export async function uploadDocument(
   actor: Actor,
   engagementId: string,

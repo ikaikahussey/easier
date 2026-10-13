@@ -119,7 +119,13 @@ describe("Form 990 draft (full return)", async () => {
   it("renders full-return worksheet sections", () => {
     expect(draft.sections.map((s) => s.id)).toEqual([
       "summary", "schedules", "programs", "officers", "governance", "part-viii", "part-ix",
-      "part-x-assets", "part-x-liabilities", "part-x-net-assets", "schedule-o",
+      "part-x-assets", "part-x-liabilities", "part-x-net-assets",
+      "sched-a-1", "sched-a-2a", "sched-a-2b", "sched-a-2c", "sched-a-2-excess",
+      "sched-b-rule", "sched-b-1",
+      "sched-d-6",
+      "sched-g-2",
+      "sched-i-1", "sched-i-3",
+      "schedule-o",
     ]);
   });
 

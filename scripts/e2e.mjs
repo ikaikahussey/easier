@@ -225,12 +225,38 @@ async function main() {
   assert.match(engagementUrl, /\/engagements\/[0-9a-f-]{36}$/, `unexpected ${engagementUrl}: ${text(page).slice(0, 300)}`);
   assert.match(text(page), /Awaiting documents/);
 
+  // Client revises answers to add schedule detail; saved answers come back prefilled.
+  const editLink = page.doc.querySelectorAll("a").find((a) => /\/intake$/.test(a.getAttribute("href") ?? ""));
+  assert.ok(editLink, "edit answers link missing");
+  const editPage = await alice.get(editLink.getAttribute("href"));
+  assert.equal(editPage.doc.querySelector("input[name='officers.0.name']")?.getAttribute("value"), "Leilani Kahale", "saved answers not prefilled");
+  assert.ok(editPage.doc.querySelector("details summary"), "schedule sections are not collapsible");
+  page = await alice.submit(editPage, (f) => !!f.querySelector("input[name=engagementId]") && !!f.querySelector("textarea[name=mission]"), {
+    charityStatus: "publicly_supported",
+    exemptSinceYear: "2012",
+    "supportHistory.0.year": "2021", "supportHistory.0.contributions": "300000", "supportHistory.0.relatedReceipts": "40000", "supportHistory.0.investmentIncome": "1000",
+    "supportHistory.1.year": "2022", "supportHistory.1.contributions": "340000", "supportHistory.1.relatedReceipts": "40000", "supportHistory.1.investmentIncome": "1000",
+    "supportHistory.2.year": "2023", "supportHistory.2.contributions": "380000", "supportHistory.2.relatedReceipts": "40000", "supportHistory.2.investmentIncome": "1000",
+    "supportHistory.3.year": "2024", "supportHistory.3.contributions": "410000", "supportHistory.3.relatedReceipts": "40000", "supportHistory.3.investmentIncome": "1000",
+    "contributors.0.name": "Ana Lee", "contributors.0.address": "1 Pali Hwy, Honolulu, HI", "contributors.0.kind": "individual", "contributors.0.amount": "10000", "contributors.0.fiveYearTotal": "60000",
+    "contributors.1.name": "Hale Foundation", "contributors.1.address": "2 Bishop St, Honolulu, HI", "contributors.1.kind": "foundation", "contributors.1.amount": "150000", "contributors.1.fiveYearTotal": "500000",
+    "events.0.name": "Annual Gala", "events.0.grossReceipts": "30000", "events.0.contributions": "18000", "events.0.food": "6000", "events.0.rent": "3000",
+    grantRecords: "yes",
+    grantMonitoring: "Scholarships are paid directly to colleges after enrollment is verified.",
+    "grantsToIndividuals.0.type": "College scholarships", "grantsToIndividuals.0.recipients": "12", "grantsToIndividuals.0.cash": "12000",
+  });
+  assert.equal(page.url, engagementUrl, `answers were not saved: ${text(page).slice(0, 300)}`);
+  assert.match(text(page), /intake updated/);
+
   page = await alice.submit(page, (f) => !!f.querySelector("input[type=file]"), {}, { file: { name: "tb.csv", content: fixture("tb-990.csv") } });
   assert.match(text(page), /Uploaded: tb\.csv/);
   page = await alice.submit(page, (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "submit");
   assert.match(text(page), /In review/);
   assert.match(text(page), /could not be classified/);
   assert.match(text(page), /Statement of Functional Expenses/);
+  assert.match(text(page), /Schedule A Part II, Section C/);
+  assert.match(text(page), /73\.70%/);
+  assert.match(text(page), /Schedule G Part II: fundraising events/);
   assert.match(text(page), /Labor Pledge: this work would take a person about [\d.]+ hours\. At a living wage of \$23\.08 an hour, that is \$[\d,.]+ of labor\. From this fee,\s*easier.company contributes \$[\d.]+ \(12\.4%\)/);
   const engagementId = engagementUrl.split("/").pop();
 

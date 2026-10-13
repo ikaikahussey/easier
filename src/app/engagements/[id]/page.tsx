@@ -45,6 +45,17 @@ export default async function EngagementPage({
           )}
 
           {editable && (
+            <Card title="Your answers">
+              <p className="mb-2 text-sm">
+                Add or correct answers before submitting, including the detail your return&apos;s schedules need.
+              </p>
+              <Link href={`/engagements/${e.id}/intake`} className="text-sm">
+                Edit your answers
+              </Link>
+            </Card>
+          )}
+
+          {editable && (
             <Card title="Documents">
               {product.documents.map((kind) => {
                 const latest = e.documents.find((d) => d.kind === kind.kind);

@@ -338,16 +338,32 @@ function Field({ f, name, values = {} }: { f: FieldSpec; name: string; values?: 
 export function FormFields({ form, values }: { form: FormSpec; values?: Record<string, string> }) {
   return (
     <>
-      {form.map((section) => (
-        <Card key={section.title} title={section.title}>
-          {section.help && <p className="mb-4 text-sm text-muted">{section.help}</p>}
-          <div className="space-y-4">
-            {section.fields.map((f) => (
-              <Field key={f.name} f={f} name={f.name} values={values} />
-            ))}
-          </div>
-        </Card>
-      ))}
+      {form.map((section) => {
+        const body = (
+          <>
+            {section.help && <p className="mb-4 text-sm text-muted">{section.help}</p>}
+            <div className="space-y-4">
+              {section.fields.map((f) => (
+                <Field key={f.name} f={f} name={f.name} values={values} />
+              ))}
+            </div>
+          </>
+        );
+        if (!section.collapsible)
+          return (
+            <Card key={section.title} title={section.title}>
+              {body}
+            </Card>
+          );
+        // Folded by default; open when it already holds answers. Works without JavaScript.
+        const answered = section.fields.some((f) => Object.keys(values ?? {}).some((k) => k === f.name || k.startsWith(`${f.name}.`)));
+        return (
+          <details key={section.title} className="panel mb-6 min-w-0" open={answered}>
+            <summary className="panel-title cursor-pointer text-[13px] font-bold">{section.title}</summary>
+            <div className="p-4">{body}</div>
+          </details>
+        );
+      })}
     </>
   );
 }

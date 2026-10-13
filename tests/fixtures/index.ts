@@ -44,6 +44,29 @@ export const intake990: Form990Intake = {
   programPct: 75,
   managementPct: 15,
   fundraisingPct: 10,
+  // Schedule A: hand-checked in tests/schedules.test.ts
+  charityStatus: "publicly_supported",
+  exemptSinceYear: 2012,
+  priorPublicSupportPct: 71.2,
+  supportHistory: [
+    { year: 2021, contributions: 300000, relatedReceipts: 40000, investmentIncome: 1000 },
+    { year: 2022, contributions: 340000, relatedReceipts: 40000, investmentIncome: 1000 },
+    { year: 2023, contributions: 380000, relatedReceipts: 40000, investmentIncome: 1000 },
+    { year: 2024, contributions: 410000, relatedReceipts: 40000, investmentIncome: 1000 },
+  ],
+  // Schedule B
+  contributors: [
+    { name: "Ana Lee", address: "1 Pali Hwy, Honolulu, HI 96813", kind: "individual", amount: 10000, fiveYearTotal: 60000 },
+    { name: "Hale Foundation", address: "2 Bishop St, Honolulu, HI 96813", kind: "foundation", amount: 150000, fiveYearTotal: 500000 },
+    { name: "Ben Cho", address: "3 King St, Honolulu, HI 96817", kind: "individual", amount: 7000 },
+    { name: "State of Hawaii", kind: "government", amount: 90000 },
+  ],
+  // Schedule G: the gala booked as $30,000 of event revenue and $9,000 of event expenses
+  events: [{ name: "Annual Gala", grossReceipts: 30000, contributions: 18000, food: 6000, rent: 3000 }],
+  // Schedule I Part III
+  grantRecords: true,
+  grantMonitoring: "Scholarships are paid directly to colleges after enrollment is verified.",
+  grantsToIndividuals: [{ type: "College scholarships", recipients: 12, cash: 12000 }],
 };
 
 export function input990(
