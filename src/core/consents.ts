@@ -30,8 +30,13 @@ export interface ConsentDocument {
   body: (c: ConsentContext) => string[];
 }
 
-/** Who signs returns during the pilot. Set PREPARER_OF_RECORD before inviting clients. */
-export const preparerOfRecord = () => process.env.PREPARER_OF_RECORD?.trim() || "the licensed preparer named on your return";
+/**
+ * The licensed preparer named in the engagement letter and 7216 consent, e.g. "Jane Doe, EA".
+ * Required: the consent must name the actual preparer, so clients cannot accept terms until
+ * it is set, and only a reviewer whose name and credential match it may sign.
+ */
+export const configuredPreparer = (): string | undefined => process.env.PREPARER_OF_RECORD?.trim() || undefined;
+export const preparerOfRecord = () => configuredPreparer() ?? "[preparer of record not configured]";
 
 export const CONSENT_DOCUMENTS: Record<ConsentId, ConsentDocument> = {
   engagement_letter: {
@@ -61,10 +66,10 @@ export const CONSENT_DOCUMENTS: Record<ConsentId, ConsentDocument> = {
     title: "Consent to use and disclose tax return information",
     summary: "Federal law (26 U.S.C. 7216) requires your consent before your return information is shared with the providers below.",
     body: (c) => [
-      `Federal law requires this consent form to be provided to you. Unless authorized by law, we cannot disclose your tax return information to third parties for purposes other than the preparation and filing of your tax return without your consent.`,
+      `Federal law requires this consent form to be provided to you. Unless authorized by law, we cannot disclose your tax return information to third parties without your consent. This form asks for your consent to the disclosures described below.`,
       `Taxpayer: ${c.orgName}. Tax return preparer: ${c.preparer}. Return: ${c.productName} for the period ending ${c.period}.`,
       `Information covered: all information the organization provides for this return, including its trial balance, answers to the intake questions, and uploaded documents, and the draft and final return prepared from them.`,
-      `Recipients and purpose: (1) easier.company, which operates the software used to prepare the return; and (2) Anthropic, PBC, which provides the artificial intelligence models that draft account classifications and narrative text. Each receives the information only to prepare this return. Neither may use it for any other purpose, including marketing or model training. Information sent to these providers may be processed outside the United States.`,
+      `Recipients and purpose: (1) easier.company, which operates the software used to prepare the return; and (2) Anthropic, PBC, which provides the artificial intelligence models that draft account classifications and narrative text. Each receives the information only to prepare this return. easier.company will not use it for any other purpose, including marketing. Information sent to these providers may be processed outside the United States.`,
       `Duration: this consent is effective until the return is filed and accepted, or for one year from the date signed, whichever comes first.`,
       `If you believe your tax return information has been disclosed or used improperly in a manner unauthorized by law or without your permission, you may contact the Treasury Inspector General for Tax Administration (TIGTA) by telephone at 1-800-366-4484, or by email at complaints@tigta.treas.gov.`,
     ],

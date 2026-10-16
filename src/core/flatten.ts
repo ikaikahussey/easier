@@ -15,9 +15,14 @@ export function flatten(value: unknown, prefix = ""): FlatRow[] {
   return [[prefix, String(value)]];
 }
 
-const cell = (s: string) => (/[",\n\r]/.test(s) || /^[=+\-@\t]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+/** A text cell a spreadsheet would run as a formula gets a leading apostrophe; numbers are left alone. */
+const neutralize = (s: string) => (/^[=+\-@\t\r]/.test(s) && !/^[-+]?\d+(\.\d+)?$/.test(s) ? `'${s}` : s);
+const cell = (raw: string) => {
+  const s = neutralize(raw);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
 
-/** CSV with a header row. Cells that a spreadsheet would read as a formula are quoted. */
+/** CSV with a header row. Text that a spreadsheet would run as a formula is neutralized. */
 export function toCsv(rows: FlatRow[]): string {
   return ["field,value", ...rows.map(([f, v]) => `${cell(f)},${cell(v)}`)].join("\r\n") + "\r\n";
 }

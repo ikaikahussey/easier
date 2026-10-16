@@ -275,15 +275,11 @@ async function main() {
   assert.match(text(page), /Anthropic, PBC/);
   page = await alice.submit(page, submitForm);
   assert.match(text(page), /Accept the engagement letter and the consent/);
-  const termsForm = (f) => !!f.querySelector("input[name=signerName]");
-  page = await alice.submit(page, termsForm, { "accept:engagement_letter": true, "accept:irc_7216": true, signerName: "", signerTitle: "" });
+  const termsForm = (doc) => (f) => f.querySelector("input[name=document]")?.getAttribute("value") === doc;
+  page = await alice.submit(page, termsForm("engagement_letter"), { accept: true, signerName: "", signerTitle: "" });
   assert.match(text(page), /Type your full name/);
-  page = await alice.submit(page, termsForm, {
-    "accept:engagement_letter": true,
-    "accept:irc_7216": true,
-    signerName: "Leilani Kahale",
-    signerTitle: "Executive Director",
-  });
+  for (const doc of ["engagement_letter", "irc_7216"])
+    page = await alice.submit(page, termsForm(doc), { accept: true, signerName: "Leilani Kahale", signerTitle: "Executive Director" });
   assert.match(text(page), /Engagement letter: accepted by Leilani Kahale, Executive Director/);
   assert.match(text(page), /consent accepted/);
   page = await alice.submit(page, submitForm);
@@ -361,7 +357,7 @@ async function main() {
   assert.match(text(review), /Filed/);
   review = await rita.submit(review, (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "record_acceptance");
   assert.match(text(review), /Accepted by IRS/);
-  assert.match(text(review), /12345620263200000ABC/);
+  assert.match(text(review), /12345620263200000abc/);
 
   // The keying sheet lists every exported line.
   const sheet = await rita.get(`/engagements/${engagementId}/package/return.csv`);
@@ -397,7 +393,7 @@ async function main() {
   assert.equal(pkg.status, 200);
   assert.match(text(pkg), /Daily tutoring and homework help/);
   assert.match(text(pkg), /Approved \d{4}-\d{2}-\d{2} by Rita Reyes, EA/);
-  assert.match(text(pkg), /Submission ID: 12345620263200000ABC/);
+  assert.match(text(pkg), /Submission ID: 12345620263200000abc/);
   const bobPkg = await bob.get(`/engagements/${engagementId}/package`);
   assert.equal(bobPkg.status, 404);
 

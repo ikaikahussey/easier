@@ -150,8 +150,11 @@ export async function acceptConsentsAction(fd: FormData) {
   const actor = await requireActor();
   const id = str(fd, "engagementId");
   await attempt(`/engagements/${id}`, async () => {
+    if (!fd.get("accept")) throw new ValidationError(["Check the box to accept"]);
     await acceptConsents(actor, id, {
-      documents: [...fd.keys()].filter((k) => k.startsWith("accept:") && fd.get(k)).map((k) => k.slice("accept:".length)),
+      document: str(fd, "document"),
+      version: str(fd, "version"),
+      sha256: str(fd, "sha256"),
       signerName: str(fd, "signerName"),
       signerTitle: str(fd, "signerTitle"),
     });
@@ -236,7 +239,7 @@ export async function submitCredentialAction(fd: FormData) {
 export async function verifyCredentialAction(fd: FormData) {
   const actor = await requireAdmin();
   await attempt("/admin", async () => {
-    await setCredentialVerified(actor, str(fd, "reviewerId"), str(fd, "verified") === "yes");
+    await setCredentialVerified(actor, str(fd, "reviewerId"), str(fd, "verified") === "yes", str(fd, "submittedAt") || undefined);
   });
 }
 

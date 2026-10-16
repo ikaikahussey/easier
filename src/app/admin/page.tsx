@@ -186,6 +186,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                       <form action={verifyCredentialAction}>
                         <input type="hidden" name="reviewerId" value={r.id} />
                         <input type="hidden" name="verified" value={r.verifiedAt ? "no" : "yes"} />
+                        <input type="hidden" name="submittedAt" value={r.submittedAt?.toISOString() ?? ""} />
                         <Button type="submit" variant={r.verifiedAt ? "danger" : "primary"}>
                           {r.verifiedAt ? "Revoke" : "Verify"}
                         </Button>

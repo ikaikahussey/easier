@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { withSystem } from "../db/client";
 import { users } from "../db/schema";
 import { PRODUCTS } from "@/products";
@@ -107,16 +107,30 @@ export async function listReviewers(actor: Actor): Promise<ReviewerProfile[]> {
 }
 
 /** An admin confirms a reviewer's credential after checking it with the issuing body. */
-export async function setCredentialVerified(actor: Actor, reviewerId: string, verified: boolean): Promise<void> {
+export async function setCredentialVerified(
+  actor: Actor,
+  reviewerId: string,
+  verified: boolean,
+  /** The credential's submitted-at time the admin was looking at; verification fails if it changed since. */
+  reviewedSubmittedAt?: string,
+): Promise<void> {
   if (actor.role !== "admin") throw new ForbiddenError("Only admins verify credentials");
   if (verified && reviewerId === actor.id) throw new ForbiddenError("Another admin must verify your credential");
   await withSystem(async (tx) => {
     const [r] = await tx.select(PROFILE).from(users).where(eq(users.id, reviewerId));
     if (!r || !isStaff({ id: r.id, email: r.email, role: r.role as Actor["role"] })) throw new NotFoundError("Reviewer not found");
     if (verified && (!r.credentialType || !r.ptin)) throw new ValidationError(["The reviewer has not submitted a credential"]);
-    await tx
+    if (verified && r.submittedAt?.toISOString() !== reviewedSubmittedAt)
+      throw new ValidationError(["The credential changed after you loaded this page. Review it again before verifying."]);
+    const done = await tx
       .update(users)
       .set(verified ? { credentialVerifiedAt: new Date(), credentialVerifiedBy: actor.id } : { credentialVerifiedAt: null, credentialVerifiedBy: null })
-      .where(eq(users.id, reviewerId));
+      .where(
+        verified && r.submittedAt
+          ? and(eq(users.id, reviewerId), eq(users.credentialSubmittedAt, r.submittedAt))
+          : eq(users.id, reviewerId),
+      )
+      .returning({ id: users.id });
+    if (!done.length) throw new ValidationError(["The credential changed after you loaded this page. Review it again before verifying."]);
   });
 }

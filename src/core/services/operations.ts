@@ -1,4 +1,5 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { isIsoDate } from "../dates";
 import { withSystem, withTenant } from "../db/client";
 import { engagements, organizations, type Invoice } from "../db/schema";
 import { elapsedSeconds, MAX_MANUAL_MINUTES } from "../review-time";
@@ -23,7 +24,8 @@ export async function startReviewTimer(actor: Actor, engagementId: string): Prom
     const { e } = await loadRow(tx, engagementId);
     assertCanAct(actor, e);
     if (e.reviewStartedAt) return;
-    if (e.status === "awaiting_documents") throw new WorkflowError("The client has not submitted this engagement yet");
+    if (e.status === "awaiting_documents" || e.status === "changes_requested")
+      throw new WorkflowError("The client has this engagement; start the timer once it is back in review");
     await tx.update(engagements).set({ reviewStartedAt: new Date() }).where(eq(engagements.id, e.id));
     await logEvent(tx, await vaultFor(tx, e.orgId), e, actor, "timer_started");
   });
@@ -37,10 +39,13 @@ export async function stopReviewTimer(actor: Actor, engagementId: string): Promi
     assertCanAct(actor, e);
     if (!e.reviewStartedAt) return 0;
     const seconds = elapsedSeconds(e.reviewStartedAt);
-    await tx
+    // Only the stop that still sees this start time counts it, so concurrent stops cannot double-count.
+    const stopped = await tx
       .update(engagements)
-      .set({ reviewSeconds: e.reviewSeconds + seconds, reviewStartedAt: null })
-      .where(eq(engagements.id, e.id));
+      .set({ reviewSeconds: sql`${engagements.reviewSeconds} + ${seconds}`, reviewStartedAt: null })
+      .where(and(eq(engagements.id, e.id), eq(engagements.reviewStartedAt, e.reviewStartedAt)))
+      .returning({ id: engagements.id });
+    if (!stopped.length) return 0;
     await logEvent(tx, await vaultFor(tx, e.orgId), e, actor, "timer_stopped", { seconds });
     return seconds;
   });
@@ -60,7 +65,7 @@ export async function addReviewTime(actor: Actor, engagementId: string, minutes:
     assertCanAct(actor, e);
     await tx
       .update(engagements)
-      .set({ reviewSeconds: e.reviewSeconds + minutes * 60 })
+      .set({ reviewSeconds: sql`${engagements.reviewSeconds} + ${minutes * 60}` })
       .where(eq(engagements.id, e.id));
     await logEvent(tx, await vaultFor(tx, e.orgId), e, actor, "time_added", { minutes, note: note.trim().slice(0, 500) });
   });
@@ -74,11 +79,10 @@ export async function recordInvoice(
 ): Promise<void> {
   if (actor.role !== "admin") throw new ForbiddenError("Only admins record invoices");
   const amountCents = Math.round(Number(input.amount.replace(/[$,\s]/g, "")) * 100);
-  const date = /^\d{4}-\d{2}-\d{2}$/;
   const issues = [
     !(Number.isFinite(amountCents) && amountCents > 0) && "Enter the invoice amount in dollars",
-    !date.test(input.issuedOn) && "Enter the issue date as YYYY-MM-DD",
-    input.paidOn && !date.test(input.paidOn) && "Enter the paid date as YYYY-MM-DD",
+    !isIsoDate(input.issuedOn) && "Enter the issue date as YYYY-MM-DD",
+    input.paidOn && !isIsoDate(input.paidOn) && "Enter the paid date as YYYY-MM-DD",
     input.paidOn && input.paidOn < input.issuedOn && "The paid date is before the issue date",
   ].filter(Boolean) as string[];
   if (issues.length) throw new ValidationError(issues);

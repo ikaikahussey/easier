@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { sha256, type OrgVault } from "../crypto";
 import { withSystem, withTenant, type Tx } from "../db/client";
 import { documents, drafts, engagements, events, organizations, users, type Filing, type Invoice } from "../db/schema";
-import { CONSENT_DOCUMENTS, consentHash, preparerOfRecord, type ConsentAcceptance, type ConsentContext, type ConsentId } from "../consents";
+import { isIsoDate, todayIso } from "../dates";
+import { CONSENT_DOCUMENTS, configuredPreparer, consentHash, isConsentId, preparerOfRecord, type ConsentAcceptance, type ConsentContext, type ConsentId } from "../consents";
 import { buildDraft } from "../draft";
 import { formSchema } from "../fields";
 import { emptyOverrides, priceEngagement, type DraftSnapshot, type OrgProfile, type Overrides, type PriorYear, type Quote } from "../product";
@@ -52,8 +53,9 @@ export interface ConsentStatus {
   title: string;
   summary: string;
   version: string;
-  /** The text the client is asked to accept, rendered for this engagement. */
+  /** The text the client is asked to accept, rendered for this engagement, and its hash. */
   paragraphs: string[];
+  sha256: string;
   accepted?: { at: Date; signerName: string; signerTitle: string };
 }
 
@@ -182,6 +184,7 @@ function consentStatus(e: EngagementRow, orgName: string, evts: EventRow[], vaul
       summary: doc.summary,
       version: doc.version,
       paragraphs: doc.body(c),
+      sha256: hash,
       accepted: match && { at: match.at, signerName: match.signerName, signerTitle: match.signerTitle },
     };
   });
@@ -415,24 +418,30 @@ export interface TransitionDetails {
 const SUBMISSION_ID = /^\d{13}[a-z0-9]{7}$/i;
 
 function filingDate(raw: string | undefined): string {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const d = raw?.trim() || today;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) throw new ValidationError(["Enter the date as YYYY-MM-DD"]);
+  if (!isIsoDate(d)) throw new ValidationError(["Enter the date as YYYY-MM-DD"]);
   if (d > today) throw new ValidationError(["The date cannot be in the future"]);
   return d;
 }
 
-/** The signer's credential must be verified and accepted for this product. */
+/**
+ * The signer's credential must be verified and accepted for this product, and the signer must
+ * be the preparer the client's engagement letter and 7216 consent name.
+ */
 async function assertMaySign(tx: Tx, actor: Actor, productSlug: string) {
   const product = getProduct(productSlug);
   const [u] = await tx
-    .select({ type: users.credentialType, verifiedAt: users.credentialVerifiedAt })
+    .select({ type: users.credentialType, verifiedAt: users.credentialVerifiedAt, name: users.name })
     .from(users)
     .where(eq(users.id, actor.id));
   if (!u?.verifiedAt || !u.type)
     throw new WorkflowError("Your credential has not been verified yet. Submit it on your reviewer profile; an admin verifies it.");
   if (!product.reviewerCredentials.includes(u.type))
     throw new WorkflowError(`${product.name} must be signed by: ${product.reviewerCredentials.join(", ")}`);
+  const named = configuredPreparer();
+  if (named && `${u.name}, ${u.type}` !== named)
+    throw new WorkflowError(`The client's engagement terms name ${named} as preparer; only that preparer can sign`);
   return u.type;
 }
 
@@ -468,16 +477,20 @@ export async function transition(
       payload.signer = { name: u?.name ?? actor.email, credential: await assertMaySign(tx, actor, e.product) };
     }
     if ((action === "approve" || action === "request_changes") && e.reviewStartedAt) {
-      // Leaving review stops the reviewer's timer.
+      // Leaving review stops the reviewer's timer; only the update that still sees this start time counts it.
       const seconds = elapsedSeconds(e.reviewStartedAt);
-      patch.reviewSeconds = e.reviewSeconds + seconds;
-      patch.reviewStartedAt = null;
-      payload.timerSeconds = seconds;
+      const stopped = await tx
+        .update(engagements)
+        .set({ reviewSeconds: sql`${engagements.reviewSeconds} + ${seconds}`, reviewStartedAt: null })
+        .where(and(eq(engagements.id, e.id), eq(engagements.reviewStartedAt, e.reviewStartedAt)))
+        .returning({ id: engagements.id });
+      if (stopped.length) payload.timerSeconds = seconds;
     }
     if (action === "record_filing") {
       const submissionId = details.submissionId?.trim() ?? "";
       if (!SUBMISSION_ID.test(submissionId)) throw new ValidationError(["Enter the 20-character IRS submission ID"]);
-      patch.filing = { submissionId: submissionId.toUpperCase(), filedOn: filingDate(details.date) };
+      // MeF submission IDs end in lowercase alphanumerics; store them that way.
+      patch.filing = { submissionId: submissionId.toLowerCase(), filedOn: filingDate(details.date) };
       payload.submissionId = patch.filing.submissionId;
     }
     if (action === "record_acceptance" || action === "record_rejection") {
@@ -499,15 +512,17 @@ export async function transition(
 }
 
 /**
- * The client accepts the engagement documents. The typed name and title are the signature;
- * the event records the document version and a hash of the exact text shown.
+ * The client accepts one engagement document. The typed name and title are the signature.
+ * The form posts the version and hash of the text it displayed; acceptance is refused if
+ * the server would now show different text, so the record always matches what was read.
  */
 export async function acceptConsents(
   actor: Actor,
   engagementId: string,
-  input: { documents: string[]; signerName: string; signerTitle: string },
+  input: { document: string; version: string; sha256: string; signerName: string; signerTitle: string },
 ): Promise<void> {
   if (isStaff(actor)) throw new ForbiddenError("The client organization accepts its own engagement terms");
+  if (!configuredPreparer()) throw new WorkflowError("Engagement terms are not ready yet: no preparer of record is configured");
   const signerName = input.signerName.trim().slice(0, 120);
   const signerTitle = input.signerTitle.trim().slice(0, 120);
   const issues = [!signerName && "Type your full name to sign", !signerTitle && "Enter your title"].filter(Boolean) as string[];
@@ -516,22 +531,22 @@ export async function acceptConsents(
     const { e, orgName } = await loadRow(tx, engagementId);
     if (!["awaiting_documents", "changes_requested"].includes(e.status))
       throw new WorkflowError("Terms are accepted before the engagement is submitted");
-    const required = getProduct(e.product).consents;
-    const chosen = required.filter((id) => input.documents.includes(id));
-    if (!chosen.length) throw new ValidationError(["Check each document you accept"]);
-    const vault = await vaultFor(tx, e.orgId);
+    const id = input.document;
+    if (!isConsentId(id) || !getProduct(e.product).consents.includes(id)) throw new ValidationError(["Unknown document"]);
     const c = consentContext(e, orgName);
-    for (const id of chosen) {
-      const acceptance: ConsentAcceptance = {
-        document: id,
-        version: CONSENT_DOCUMENTS[id].version,
-        sha256: consentHash(id, c),
-        signerName,
-        signerTitle,
-        preparer: c.preparer,
-      };
-      await logEvent(tx, vault, e, actor, "consent_accepted", { ...acceptance });
-    }
+    const hash = consentHash(id, c);
+    if (input.version !== CONSENT_DOCUMENTS[id].version || input.sha256 !== hash)
+      throw new ValidationError([`The ${CONSENT_DOCUMENTS[id].title.toLowerCase()} changed after you opened this page. Read it again before accepting.`]);
+    const vault = await vaultFor(tx, e.orgId);
+    const acceptance: ConsentAcceptance = {
+      document: id,
+      version: input.version,
+      sha256: hash,
+      signerName,
+      signerTitle,
+      preparer: c.preparer,
+    };
+    await logEvent(tx, vault, e, actor, "consent_accepted", { ...acceptance });
   });
 }
 
@@ -561,6 +576,16 @@ export async function claim(actor: Actor, engagementId: string, reviewerId = act
   if (!isStaff(actor)) throw new ForbiddenError("Only staff can claim engagements");
   if (reviewerId !== actor.id && actor.role !== "admin") throw new ForbiddenError("Only admins can assign others");
   await withSystem(async (tx) => {
+    // Reassignment stops the previous reviewer's running timer and credits the time already spent.
+    const [prev] = await tx
+      .select({ assigned: engagements.assignedReviewerId, startedAt: engagements.reviewStartedAt })
+      .from(engagements)
+      .where(eq(engagements.id, engagementId));
+    if (prev?.assigned && prev.assigned !== reviewerId && prev.startedAt && actor.role === "admin")
+      await tx
+        .update(engagements)
+        .set({ reviewSeconds: sql`${engagements.reviewSeconds} + ${elapsedSeconds(prev.startedAt)}`, reviewStartedAt: null })
+        .where(and(eq(engagements.id, engagementId), eq(engagements.reviewStartedAt, prev.startedAt)));
     const where =
       actor.role === "admin"
         ? eq(engagements.id, engagementId)

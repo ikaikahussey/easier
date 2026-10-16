@@ -6,6 +6,7 @@ import { NotFoundError } from "@/core/services/context";
 import { getProduct } from "@/products";
 import { Button, Card, FilingSummary, Findings, Notice, QuoteBox, Shell, StatusBadge, Worksheet, inputClass } from "@/ui/components";
 import { SIGNED } from "@/core/workflow";
+import { configuredPreparer } from "@/core/consents";
 import { requireActor } from "@/ui/session";
 
 export default async function EngagementPage({
@@ -24,6 +25,7 @@ export default async function EngagementPage({
   const editable = e.status === "awaiting_documents" || e.status === "changes_requested";
   const changeNote = e.events.find((x) => x.type === "status:request_changes")?.payload?.note as string | undefined;
   const pendingConsents = e.consents.filter((c) => !c.accepted);
+  const preparerReady = !!configuredPreparer();
   const documentsReady = product.documents.every((k) => !k.required || e.documents.some((d) => d.kind === k.kind));
 
   return (
@@ -60,38 +62,50 @@ export default async function EngagementPage({
 
           {editable && (
             <Card title="Engagement terms">
-              {pendingConsents.length ? (
-                <form action={acceptConsentsAction} className="space-y-4">
-                  <input type="hidden" name="engagementId" value={e.id} />
-                  <p className="text-sm">Read and accept these before submitting. An officer or authorized representative signs.</p>
-                  {pendingConsents.map((c) => (
-                    <details key={c.id} className="border border-line p-3" open>
-                      <summary className="cursor-pointer text-sm font-bold">{c.title}</summary>
-                      <p className="mt-2 text-xs text-muted">{c.summary}</p>
-                      <div className="mt-2 max-h-72 space-y-2 overflow-y-auto text-sm">
-                        {c.paragraphs.map((para, i) => (
-                          <p key={i}>{para}</p>
-                        ))}
-                      </div>
-                      <label className="mt-3 flex items-start gap-2 text-sm">
-                        <input type="checkbox" name={`accept:${c.id}`} required />
-                        <span>I have read and accept the {c.title.toLowerCase()} on behalf of {e.orgName}.</span>
+              {pendingConsents.length > 0 && (
+                <p className="mb-3 text-sm">
+                  Read and accept each document before submitting. An officer or authorized representative signs each one.
+                </p>
+              )}
+              {!preparerReady && pendingConsents.length > 0 && (
+                <p className="mb-3 text-sm text-danger">Your preparer is being assigned. You can accept these terms once that is done.</p>
+              )}
+              {preparerReady &&
+                pendingConsents.map((c) => (
+                  <form key={c.id} action={acceptConsentsAction} className="mb-4 border border-line p-3">
+                    <input type="hidden" name="engagementId" value={e.id} />
+                    <input type="hidden" name="document" value={c.id} />
+                    <input type="hidden" name="version" value={c.version} />
+                    <input type="hidden" name="sha256" value={c.sha256} />
+                    <h3 className="text-sm font-bold">{c.title}</h3>
+                    <p className="mt-1 text-xs text-muted">{c.summary}</p>
+                    <div className="mt-2 max-h-72 space-y-2 overflow-y-auto text-sm">
+                      {c.paragraphs.map((para, i) => (
+                        <p key={i}>{para}</p>
+                      ))}
+                    </div>
+                    <label className="mt-3 flex items-start gap-2 text-sm">
+                      <input type="checkbox" name="accept" required />
+                      <span>
+                        I have read and accept the {c.title.toLowerCase()} on behalf of {e.orgName}.
+                      </span>
+                    </label>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium">Full name (your signature)</span>
+                        <input name="signerName" required autoComplete="name" className={inputClass} />
                       </label>
-                    </details>
-                  ))}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium">Full name (your signature)</span>
-                      <input name="signerName" required autoComplete="name" className={inputClass} />
-                    </label>
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium">Title</span>
-                      <input name="signerTitle" required placeholder="e.g. Treasurer" className={inputClass} />
-                    </label>
-                  </div>
-                  <Button type="submit">Sign and accept</Button>
-                </form>
-              ) : null}
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium">Title</span>
+                        <input name="signerTitle" required placeholder="e.g. Treasurer" className={inputClass} />
+                      </label>
+                    </div>
+                    <p className="mt-2 text-xs text-muted">Signed {new Date().toISOString().slice(0, 10)}.</p>
+                    <Button type="submit" className="mt-3">
+                      Sign and accept
+                    </Button>
+                  </form>
+                ))}
               {e.consents.some((c) => c.accepted) && (
                 <ul className="mt-3 space-y-1 text-sm">
                   {e.consents

@@ -252,7 +252,10 @@ export default async function ReviewPage({
                   <input type="hidden" name="action" value="record_rejection" />
                   <input type="hidden" name="back" value="review" />
                   <textarea name="note" required rows={2} placeholder="Rejection codes and what must change" className={inputClass} />
-                  <input name="date" type="date" max={today} defaultValue={today} className={inputClass} />
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Rejection date</span>
+                    <input name="date" type="date" max={today} defaultValue={today} className={inputClass} />
+                  </label>
                   <Button type="submit" variant="danger" className="w-full">
                     {ACTION_LABEL.record_rejection}
                   </Button>

@@ -9,6 +9,7 @@ import { formDataToObject, objectToFormValues, parseForm, type FormSpec } from "
 import { availableActions, nextStatus, WorkflowError } from "@/core/workflow";
 import { elapsedSeconds, formatDuration, MAX_TIMER_SECONDS } from "@/core/review-time";
 import { flatten, toCsv } from "@/core/flatten";
+import { isIsoDate } from "@/core/dates";
 import { consentHash, renderConsent } from "@/core/consents";
 import { runRules, adaptRules } from "@/core/rules";
 import { AiRunner, type AiTask, type Llm } from "@/core/ai/llm";
@@ -192,10 +193,16 @@ describe("keying sheet", () => {
     ]);
   });
 
-  it("quotes commas, quotes, and anything a spreadsheet would run as a formula", () => {
-    expect(toCsv([["a", 'Kōkua "Learning", Inc.'], ["b", "=HYPERLINK(1)"], ["c", "-5"]])).toBe(
-      'field,value\r\na,"Kōkua ""Learning"", Inc."\r\nb,"=HYPERLINK(1)"\r\nc,"-5"\r\n',
+  it("quotes commas and quotes, and neutralizes text a spreadsheet would run as a formula", () => {
+    expect(toCsv([["a", 'Kōkua "Learning", Inc.'], ["b", "=HYPERLINK(1)"], ["c", "-5"], ["d", "@SUM(A1)"], ["e", "+1.5"]])).toBe(
+      "field,value\r\na,\"Kōkua \"\"Learning\"\", Inc.\"\r\nb,'=HYPERLINK(1)\r\nc,-5\r\nd,'@SUM(A1)\r\ne,+1.5\r\n",
     );
+  });
+
+  it("accepts only real calendar dates", () => {
+    expect(isIsoDate("2026-10-15")).toBe(true);
+    expect(isIsoDate("2024-02-29")).toBe(true);
+    for (const bad of ["2026-02-31", "2026-99-99", "10/15/2026", "2026-1-5", ""]) expect(isIsoDate(bad)).toBe(false);
   });
 });
 
