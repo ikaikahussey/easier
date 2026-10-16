@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { claimAction, saveReviewAction, transitionAction } from "@/app/actions";
+import { addReviewTimeAction, claimAction, reviewTimerAction, saveReviewAction, transitionAction } from "@/app/actions";
 import { linesForType } from "@/core/ledger/catalog";
 import { formatUsd } from "@/core/money";
 import { getEngagement } from "@/core/services/engagements";
+import { getReviewerProfile } from "@/core/services/reviewers";
+import { formatDuration } from "@/core/review-time";
+import { getProduct } from "@/products";
 import { NotFoundError } from "@/core/services/context";
-import type { Action } from "@/core/workflow";
-import { Button, Card, Findings, Notice, QuoteBox, Shell, StatusBadge, Worksheet, inputClass } from "@/ui/components";
+import { SIGNED, type Action } from "@/core/workflow";
+import { Button, Card, FilingSummary, Findings, Notice, QuoteBox, Shell, StatusBadge, Worksheet, inputClass } from "@/ui/components";
 import { requireStaff } from "@/ui/session";
 
 const ACTION_LABEL: Record<Action, string> = {
@@ -15,7 +18,12 @@ const ACTION_LABEL: Record<Action, string> = {
   approve: "Approve and sign",
   reopen: "Reopen",
   deliver: "Mark delivered",
+  record_filing: "Record e-filing",
+  record_acceptance: "Record IRS acceptance",
+  record_rejection: "Record IRS rejection",
 };
+
+const FILING_ACTIONS: Action[] = ["record_filing", "record_acceptance", "record_rejection"];
 
 const SOURCE_LABEL = { override: "Reviewer", keyword: "Rule", ai: "AI", fallback: "Unclassified" } as const;
 
@@ -67,6 +75,10 @@ export default async function ReviewPage({
       </Shell>
     );
 
+  const profile = await getReviewerProfile(actor);
+  const product = getProduct(e.product);
+  const maySign = !!profile.verifiedAt && !!profile.credentialType && product.reviewerCredentials.includes(profile.credentialType);
+  const today = new Date().toISOString().slice(0, 10);
   const snap = e.draft?.snapshot;
   const editing = e.status === "in_review" && snap;
   const flagged = new Set(snap?.findings.filter((f) => f.subject).map((f) => f.subject));
@@ -162,8 +174,14 @@ export default async function ReviewPage({
         <aside>
           <Card title="Decision">
             <div className="space-y-3">
+              {e.actions.includes("approve") && !maySign && (
+                <p className="text-xs text-danger">
+                  You cannot sign until an admin verifies your credential ({product.reviewerCredentials.join(" or ")}).{" "}
+                  <Link href="/review/profile">Your credential</Link>
+                </p>
+              )}
               {e.actions
-                .filter((a) => a !== "submit")
+                .filter((a) => a !== "submit" && !FILING_ACTIONS.includes(a))
                 .map((a) => (
                   <form key={a} action={transitionAction} className="space-y-2">
                     <input type="hidden" name="engagementId" value={e.id} />
@@ -175,7 +193,7 @@ export default async function ReviewPage({
                     <Button
                       type="submit"
                       variant={a === "approve" ? "primary" : a === "request_changes" ? "danger" : "quiet"}
-                      disabled={a === "approve" && e.errorCount > 0}
+                      disabled={a === "approve" && (e.errorCount > 0 || !maySign)}
                       className="w-full"
                     >
                       {ACTION_LABEL[a]}
@@ -185,12 +203,87 @@ export default async function ReviewPage({
                     )}
                   </form>
                 ))}
-              {(e.status === "approved" || e.status === "delivered") && (
+              {SIGNED.includes(e.status) && (
                 <Link href={`/engagements/${e.id}/package`} className="block text-sm">
                   Open review package
                 </Link>
               )}
             </div>
+          </Card>
+          {(e.filing || e.actions.some((a) => FILING_ACTIONS.includes(a))) && (
+            <Card title="E-filing">
+              {e.filing && <FilingSummary filing={e.filing} />}
+              {e.actions.includes("record_filing") && (
+                <form action={transitionAction} className="mt-3 space-y-2">
+                  <input type="hidden" name="engagementId" value={e.id} />
+                  <input type="hidden" name="action" value="record_filing" />
+                  <input type="hidden" name="back" value="review" />
+                  <p className="text-xs text-muted">After the officer signs Form 8879-TE and the return is transmitted.</p>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">IRS submission ID</span>
+                    <input name="submissionId" required minLength={20} maxLength={20} className={`${inputClass} font-mono`} />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Date transmitted</span>
+                    <input name="date" type="date" max={today} defaultValue={today} className={inputClass} />
+                  </label>
+                  <Button type="submit" className="w-full">
+                    {ACTION_LABEL.record_filing}
+                  </Button>
+                </form>
+              )}
+              {e.actions.includes("record_acceptance") && (
+                <form action={transitionAction} className="mt-3 space-y-2">
+                  <input type="hidden" name="engagementId" value={e.id} />
+                  <input type="hidden" name="action" value="record_acceptance" />
+                  <input type="hidden" name="back" value="review" />
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Acknowledgement date</span>
+                    <input name="date" type="date" max={today} defaultValue={today} className={inputClass} />
+                  </label>
+                  <Button type="submit" className="w-full">
+                    {ACTION_LABEL.record_acceptance}
+                  </Button>
+                </form>
+              )}
+              {e.actions.includes("record_rejection") && (
+                <form action={transitionAction} className="mt-3 space-y-2 border-t border-line pt-3">
+                  <input type="hidden" name="engagementId" value={e.id} />
+                  <input type="hidden" name="action" value="record_rejection" />
+                  <input type="hidden" name="back" value="review" />
+                  <textarea name="note" required rows={2} placeholder="Rejection codes and what must change" className={inputClass} />
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Rejection date</span>
+                    <input name="date" type="date" max={today} defaultValue={today} className={inputClass} />
+                  </label>
+                  <Button type="submit" variant="danger" className="w-full">
+                    {ACTION_LABEL.record_rejection}
+                  </Button>
+                </form>
+              )}
+            </Card>
+          )}
+          <Card title="Review time" aside={e.reviewTimerRunning ? <span className="text-xs font-bold text-accent">Timer running</span> : undefined}>
+            <p className="text-2xl font-bold tabular-nums">{formatDuration(e.reviewSeconds)}</p>
+            <p className="mb-3 text-xs text-muted">Pilot target: a full Form 990 under 6 hours. Includes time keyed in outside the platform.</p>
+            <form action={reviewTimerAction}>
+              <input type="hidden" name="engagementId" value={e.id} />
+              <input type="hidden" name="timer" value={e.reviewTimerRunning ? "stop" : "start"} />
+              <Button type="submit" variant="quiet" className="w-full">
+                {e.reviewTimerRunning ? "Pause timer" : "Start timer"}
+              </Button>
+            </form>
+            <form action={addReviewTimeAction} className="mt-3 space-y-2 border-t border-line pt-3">
+              <input type="hidden" name="engagementId" value={e.id} />
+              <p className="text-xs font-medium">Add time worked outside the platform</p>
+              <div className="flex gap-2">
+                <input name="minutes" type="number" min={1} max={480} required placeholder="Minutes" className={`${inputClass} w-28`} />
+                <input name="note" required placeholder="e.g. Keyed return into Tax990" className={inputClass} />
+              </div>
+              <Button type="submit" variant="quiet" className="w-full">
+                Add time
+              </Button>
+            </form>
           </Card>
           <Card title="Fee">
             <QuoteBox quote={e.quote} />

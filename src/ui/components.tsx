@@ -6,6 +6,7 @@ import { LABOR_PLEDGE, type PledgeTerms } from "@/core/pledge";
 import type { Quote, ReviewSection } from "@/core/product";
 import type { Finding } from "@/core/rules";
 import type { Status } from "@/core/workflow";
+import type { Filing } from "@/core/db/schema";
 import type { Actor } from "@/core/services/context";
 import { logoutAction } from "@/app/actions";
 
@@ -30,6 +31,16 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
               <Link href={staff ? "/review" : "/app"} className="nav-link">
                 {staff ? "Review queue" : "Your organizations"}
               </Link>
+              {staff && (
+                <Link href="/review/profile" className="nav-link">
+                  Credential
+                </Link>
+              )}
+              {actor.role === "admin" && (
+                <Link href="/admin" className="nav-link">
+                  Pilot admin
+                </Link>
+              )}
               <form action={logoutAction}>
                 <button className="nav-link cursor-pointer" title={`Signed in as ${actor.email}`}>
                   Sign out
@@ -89,6 +100,9 @@ const STATUS_STYLE: Record<Status, string> = {
   changes_requested: "border-danger text-danger",
   approved: "border-ok text-ok",
   delivered: "border-muted text-muted",
+  filed: "border-accent text-accent",
+  accepted: "border-ok text-ok",
+  rejected: "border-danger text-danger",
 };
 
 export function StatusBadge({ status, label }: { status: Status; label: string }) {
@@ -96,6 +110,28 @@ export function StatusBadge({ status, label }: { status: Status; label: string }
     <span className={`inline-block border-2 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${STATUS_STYLE[status]}`}>
       {label}
     </span>
+  );
+}
+
+export function FilingSummary({ filing }: { filing: Filing }) {
+  return (
+    <dl className="space-y-1 text-sm">
+      <div>
+        <dt className="inline font-bold">Submission ID: </dt>
+        <dd className="inline font-mono">{filing.submissionId}</dd>
+      </div>
+      <div>
+        <dt className="inline font-bold">Filed: </dt>
+        <dd className="inline">{filing.filedOn}</dd>
+      </div>
+      {filing.result && (
+        <div>
+          <dt className="inline font-bold">{filing.result === "accepted" ? "Accepted" : "Rejected"}: </dt>
+          <dd className="inline">{filing.acknowledgedOn}</dd>
+        </div>
+      )}
+      {filing.rejectionNote && <p className="text-danger">{filing.rejectionNote}</p>}
+    </dl>
   );
 }
 

@@ -1,3 +1,4 @@
+import type { ConsentId } from "./consents";
 import type { FieldSpec, FormSpec } from "./fields";
 import type { Cents } from "./money";
 import type { Rule, Finding } from "./rules";
@@ -112,6 +113,10 @@ export interface ProductDefinition<I = any, D = any> {
   status: "live" | "beta";
   /** Credentials that may sign off, e.g. ["EA", "CPA"]. */
   reviewerCredentials: string[];
+  /** Documents the client must accept before the engagement can be submitted. */
+  consents: ConsentId[];
+  /** True when the finished work is filed with the IRS, which adds filed → accepted/rejected states. */
+  filedWithIrs?: boolean;
   period: FieldSpec & { name: "period" };
   intake: FormSpec;
   documents: DocumentKind[];

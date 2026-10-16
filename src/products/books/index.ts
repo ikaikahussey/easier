@@ -71,6 +71,7 @@ export const books = defineProduct<BooksIntake, BooksData>({
   tagline: "Nonprofit books closed every month, reviewed by an accountant, ready for your board and your 990.",
   status: "beta",
   reviewerCredentials: ["CPA", "EA", "Senior accountant"],
+  consents: ["engagement_letter"],
   period: { name: "period", type: "date", label: "Month-end date", required: true },
   intake: [
     {
