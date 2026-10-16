@@ -23,6 +23,12 @@ export async function requireStaff(): Promise<Actor> {
   return a;
 }
 
+export async function requireAdmin(): Promise<Actor> {
+  const a = await requireActor();
+  if (a.role !== "admin") redirect(isStaff(a) ? "/review" : "/app");
+  return a;
+}
+
 export async function startSession(userId: string) {
   (await cookies()).set(COOKIE, createSessionToken(userId), {
     httpOnly: true,

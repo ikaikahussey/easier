@@ -4,6 +4,7 @@ import { withSystem, withTenant, type Db } from "@/core/db/client";
 import * as schema from "@/core/db/schema";
 import { createOrganization, destroyOrganizationKey, getOrganization, listOrganizations } from "@/core/services/organizations";
 import {
+  acceptConsents,
   claim,
   createEngagement,
   getEngagement,
@@ -15,6 +16,8 @@ import {
 } from "@/core/services/engagements";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/core/services/context";
 import { consumeLogin, createSessionToken, joinWaitlist, readSessionToken, requestLogin } from "@/core/services/auth";
+import { addReviewTime, pilotMetrics, recordInvoice, startReviewTimer, stopReviewTimer } from "@/core/services/operations";
+import { getReviewerProfile, listReviewers, setCredentialVerified, submitCredential } from "@/core/services/reviewers";
 import { OrgVault, unwrapKey } from "@/core/crypto";
 import type { Form990Data } from "@/products/form-990";
 import { csv, intake990 } from "./fixtures";
@@ -48,6 +51,11 @@ beforeAll(async () => {
   await uploadDocument(alice, engA, { kind: "trial_balance", filename: "tb.csv", text: csv("tb-990.csv") });
   await uploadDocument(bob, engB, { kind: "trial_balance", filename: "tb.csv", text: csv("tb-ez.csv") });
 });
+
+const BOTH = ["engagement_letter", "irc_7216"];
+const sign = (who: Actor, eng: string, documents = BOTH) =>
+  acceptConsents(who, eng, { documents, signerName: "Leilani Kahale", signerTitle: "Treasurer" });
+const credential = { name: "Rita Reyes", credentialType: "EA", credentialNumber: "00123456", credentialJurisdiction: "IRS", ptin: "P01234567" };
 
 describe("engagement lifecycle", () => {
   it("prefills the organization from public filings", async () => {
@@ -84,6 +92,35 @@ describe("engagement lifecycle", () => {
     await updateIntake(alice, engA, intake990);
   });
 
+  it("submit requires the client to accept the engagement letter and 7216 consent", async () => {
+    await expect(transition(alice, engA, "submit")).rejects.toThrow(/Accept the engagement letter and the consent/);
+    await expect(sign(rita, engA)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(sign(bob, engA)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(acceptConsents(alice, engA, { documents: BOTH, signerName: " ", signerTitle: "" })).rejects.toThrow(/full name/);
+    await expect(sign(alice, engA, ["something_else"])).rejects.toThrow(/Check each document/);
+    await sign(alice, engA, ["engagement_letter"]);
+    await expect(transition(alice, engA, "submit")).rejects.toThrow(/consent to use and disclose/);
+    await sign(alice, engA, ["irc_7216"]);
+    const d = await getEngagement(alice, engA);
+    expect(d.consents.map((c) => [c.id, c.accepted?.signerName])).toEqual([
+      ["engagement_letter", "Leilani Kahale"],
+      ["irc_7216", "Leilani Kahale"],
+    ]);
+    const evt = d.events.find((e) => e.type === "consent_accepted")!.payload!;
+    expect(evt).toMatchObject({ signerTitle: "Treasurer", version: expect.any(String), sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
+  });
+
+  it("an acceptance no longer counts once the text it hashed changes", async () => {
+    const before = process.env.PREPARER_OF_RECORD;
+    process.env.PREPARER_OF_RECORD = "Someone Else, CPA";
+    const d = await getEngagement(alice, engA);
+    expect(d.consents.every((c) => !c.accepted)).toBe(true);
+    expect(d.consents[0]!.paragraphs[0]).toMatch(/Someone Else, CPA/);
+    if (before === undefined) delete process.env.PREPARER_OF_RECORD;
+    else process.env.PREPARER_OF_RECORD = before;
+    expect((await getEngagement(alice, engA)).consents.every((c) => c.accepted)).toBe(true);
+  });
+
   it("submit builds an AI draft and moves to review", async () => {
     expect(await transition(alice, engA, "submit")).toBe("in_review");
     const d = await getEngagement(alice, engA);
@@ -109,6 +146,28 @@ describe("engagement lifecycle", () => {
     await expect(saveReview(rita, engA, { mappings: {}, text: {} })).rejects.toBeInstanceOf(ForbiddenError);
   });
 
+  it("only verified reviewers with an accepted credential may sign", async () => {
+    await expect(submitCredential(alice, credential)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(submitCredential(rita, { ...credential, ptin: "12345678", credentialType: "Wizard" })).rejects.toThrow(
+      /Choose a credential.*PTIN is P followed by 8 digits/,
+    );
+    await submitCredential(rita, credential);
+    expect((await getReviewerProfile(rita)).verifiedAt).toBeNull();
+    await expect(setCredentialVerified(rex, rita.id, true)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setCredentialVerified(admin, rex.id, true)).rejects.toThrow(/not submitted/);
+    await expect(setCredentialVerified(admin, admin.id, true)).rejects.toThrow(/Another admin/);
+    await setCredentialVerified(admin, rita.id, true);
+    expect((await getReviewerProfile(rita)).verifiedAt).toBeInstanceOf(Date);
+    // Any change clears verification until an admin checks it again; resubmitting the same details does not.
+    await submitCredential(rita, credential);
+    expect((await getReviewerProfile(rita)).verifiedAt).toBeInstanceOf(Date);
+    await submitCredential(rita, { ...credential, efin: "123456" });
+    expect((await getReviewerProfile(rita)).verifiedAt).toBeNull();
+    await setCredentialVerified(admin, rita.id, true);
+    expect((await listReviewers(admin)).map((r) => r.email)).toContain("rita@easier.company");
+    await expect(listReviewers(rita)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
   it("assigned reviewer edits, approval is gated on findings, and staff reads are audited", async () => {
     await claim(rita, engA);
     await expect(claim(rex, engA)).rejects.toThrow(/already assigned/);
@@ -122,6 +181,8 @@ describe("engagement lifecycle", () => {
 
     expect(await transition(rita, engA, "approve")).toBe("approved");
     expect(await transition(rita, engA, "deliver")).toBe("delivered");
+    const signed = (await getEngagement(alice, engA)).events.find((e) => e.type === "status:approve")!.payload!;
+    expect(signed.signer).toEqual({ name: "Rita Reyes", credential: "EA" });
 
     const d = await getEngagement(alice, engA);
     expect(d.draft!.version).toBe(2);
@@ -131,10 +192,105 @@ describe("engagement lifecycle", () => {
   });
 
   it("requires a note to request changes", async () => {
+    await sign(bob, engB);
     await transition(bob, engB, "submit");
     await claim(rex, engB);
+    await expect(transition(rex, engB, "approve")).rejects.toThrow(/credential has not been verified/);
     await expect(transition(rex, engB, "request_changes")).rejects.toThrow(/note/);
     expect(await transition(rex, engB, "request_changes", "Please upload the December statement")).toBe("changes_requested");
+  });
+});
+
+describe("pilot operations", () => {
+  it("claiming starts the review timer; pausing, manual time, and leaving review accumulate it", async () => {
+    // engA: claimed while in review, so its timer started then and stopped at approval.
+    const a = await getEngagement(rita, engA);
+    expect(a.reviewTimerRunning).toBe(false);
+    expect(a.events.map((e) => e.type)).toEqual(expect.arrayContaining(["timer_started"]));
+    expect(a.events.find((e) => e.type === "status:approve")!.payload).toHaveProperty("timerSeconds");
+
+    // engB went back to the client, which stopped rex's timer.
+    expect((await getEngagement(rex, engB)).reviewTimerRunning).toBe(false);
+    await expect(startReviewTimer(rita, engB)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(startReviewTimer(bob, engB)).rejects.toBeInstanceOf(ForbiddenError);
+    await startReviewTimer(rex, engB);
+    expect((await getEngagement(rex, engB)).reviewTimerRunning).toBe(true);
+    // Backdate the running timer by 30 minutes, then pause.
+    await withSystem((tx) =>
+      tx.update(schema.engagements).set({ reviewStartedAt: new Date(Date.now() - 30 * 60_000) }).where(eq(schema.engagements.id, engB)),
+    );
+    const seconds = await stopReviewTimer(rex, engB);
+    expect(seconds).toBeGreaterThanOrEqual(1800);
+    expect(seconds).toBeLessThan(1810);
+    expect(await stopReviewTimer(rex, engB)).toBe(0);
+
+    await expect(addReviewTime(rex, engB, 0, "x")).rejects.toThrow(/whole minutes/);
+    await expect(addReviewTime(rex, engB, 15, " ")).rejects.toThrow(/Describe/);
+    await addReviewTime(rex, engB, 45, "Keyed return into Tax990");
+    const b = await getEngagement(rex, engB);
+    expect(b.reviewSeconds).toBeGreaterThanOrEqual(1800 + 45 * 60);
+    expect(b.events.find((e) => e.type === "time_added")!.payload).toEqual({ minutes: 45, note: "Keyed return into Tax990" });
+  });
+
+  it("a forgotten timer counts at most 4 hours", async () => {
+    await startReviewTimer(rex, engB);
+    await withSystem((tx) =>
+      tx.update(schema.engagements).set({ reviewStartedAt: new Date(Date.now() - 20 * 3600_000) }).where(eq(schema.engagements.id, engB)),
+    );
+    expect(await stopReviewTimer(rex, engB)).toBe(4 * 3600);
+  });
+
+  it("records e-filing, then IRS acceptance or rejection", async () => {
+    await expect(transition(rita, engA, "record_filing", undefined, { submissionId: "short" })).rejects.toThrow(/submission ID/);
+    await expect(
+      transition(rita, engA, "record_filing", undefined, { submissionId: "12345620263200000abc", date: "2999-01-01" }),
+    ).rejects.toThrow(/future/);
+    await expect(transition(alice, engA, "record_filing", undefined, { submissionId: "12345620263200000abc" })).rejects.toThrow(
+      /Role "client"/,
+    );
+    expect(await transition(rita, engA, "record_filing", undefined, { submissionId: "12345620263200000abc", date: "2026-10-10" })).toBe(
+      "filed",
+    );
+    await expect(transition(rita, engA, "record_rejection")).rejects.toThrow(/note/);
+    await expect(transition(rita, engA, "record_acceptance", undefined, { date: "2026-10-09" })).rejects.toThrow(/before the filing/);
+    expect(await transition(rita, engA, "record_rejection", "R0000-500-01: EIN mismatch", { date: "2026-10-11" })).toBe("rejected");
+    expect((await getEngagement(alice, engA)).filing).toMatchObject({ result: "rejected", rejectionNote: "R0000-500-01: EIN mismatch" });
+    expect(await transition(rita, engA, "record_filing", undefined, { submissionId: "12345620263210000def", date: "2026-10-12" })).toBe(
+      "filed",
+    );
+    expect(await transition(rita, engA, "record_acceptance", undefined, { date: "2026-10-13" })).toBe("accepted");
+    const d = await getEngagement(alice, engA);
+    expect(d.filing).toEqual({ submissionId: "12345620263210000DEF", filedOn: "2026-10-12", acknowledgedOn: "2026-10-13", result: "accepted" });
+    expect(d.actions).toEqual([]);
+  });
+
+  it("filing actions exist only for products filed with the IRS", async () => {
+    const carol = await makeUser(db, "carol2@c.org");
+    const orgC = (await createOrganization(carol, { name: "Org C2" })).id;
+    const engC = await createEngagement(carol, { orgId: orgC, product: "books", period: "2026-09-30", intake: { basis: "cash" } });
+    const d = await getEngagement(carol, engC);
+    expect(d.consents.map((c) => c.id)).toEqual(["engagement_letter"]);
+    expect(d.consents[0]!.paragraphs.join(" ")).not.toMatch(/8879-TE/);
+    await expect(transition(admin, engC, "record_filing")).rejects.toThrow(); // not assigned, and not a filed product
+  });
+
+  it("admins record invoices and see pilot metrics", async () => {
+    await expect(recordInvoice(rita, engA, { amount: "1950", issuedOn: "2026-11-01" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(recordInvoice(admin, engA, { amount: "abc", issuedOn: "11/01/2026" })).rejects.toThrow(/amount.*issue date/);
+    await expect(recordInvoice(admin, engA, { amount: "1950", issuedOn: "2026-11-02", paidOn: "2026-11-01" })).rejects.toThrow(
+      /before the issue/,
+    );
+    await recordInvoice(admin, engA, { amount: "$1,950.00", issuedOn: "2026-11-01", paidOn: "2026-11-05", reference: "INV-001" });
+    await expect(pilotMetrics(rita)).rejects.toBeInstanceOf(ForbiddenError);
+    const m = await pilotMetrics(admin);
+    const row = m.rows.find((r) => r.id === engA)!;
+    expect(row.invoice).toEqual({ amountCents: 195_000, issuedOn: "2026-11-01", paidOn: "2026-11-05", reference: "INV-001" });
+    expect(row.submissionId).toBe("12345620263210000DEF");
+    expect(m.accepted).toBe(1);
+    expect(m.paidCents).toBe(195_000);
+    expect(m.signed.find((s) => s.tier === "Form 990")!.count).toBe(1);
+    // Metrics are queue metadata: admins see them without being assigned, and no client content.
+    expect(Object.keys(row)).not.toContain("intake");
   });
 });
 

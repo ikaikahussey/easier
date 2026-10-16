@@ -30,6 +30,8 @@ const server = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", 
     MAIL_TRANSPORT: "log",
     APP_URL: BASE,
     REVIEWER_EMAILS: "rita@easier.company",
+    ADMIN_EMAILS: "ada@easier.company",
+    PREPARER_OF_RECORD: "Rita Reyes, EA",
     ACCESS_EMAILS: "alice@a.org,bob@b.org",
     SITE_ACCESS: "",
     SESSION_SECRET: "e2e-session-secret-0123456789abcdefghij",
@@ -135,7 +137,10 @@ async function main() {
   assert.equal(home.status, 200);
   assert.match(text(home), /Nonprofit and small business chores,\s*made easier\./);
   assert.match(text(home), /Join the waitlist/);
-  for (const area of ["Taxes", "Books", "Audits", "Securities", "Legal", "Fundraising"]) assert.match(text(home), new RegExp(area));
+  for (const area of ["Taxes", "Books", "Audit readiness", "Securities", "Documents", "Fundraising research"])
+    assert.match(text(home), new RegExp(area));
+  // Lines that need a licensing structure we do not have are not advertised.
+  assert.doesNotMatch(text(home), /Annual nonprofit audits|capacity studies|legal paperwork|we pay Social Security/);
   assert.match(home.html, /href="#waitlist"/);
   assert.ok(home.doc.querySelector("#waitlist"), "waitlist anchor target missing");
   assert.doesNotMatch(text(home), /Labor Pledge|\$23\.08|Form 990 preparation|\$1,950/);
@@ -262,7 +267,26 @@ async function main() {
 
   page = await alice.submit(page, (f) => !!f.querySelector("input[type=file]"), {}, { file: { name: "tb.csv", content: fixture("tb-990.csv") } });
   assert.match(text(page), /Uploaded: tb\.csv/);
-  page = await alice.submit(page, (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "submit");
+
+  // Engagement terms come first: submit is disabled, and forcing it is refused.
+  const submitForm = (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "submit";
+  assert.ok(page.doc.querySelectorAll("form").find(submitForm).querySelector("button[disabled]"), "submit enabled before terms");
+  assert.match(text(page), /This letter confirms the terms under which Rita Reyes, EA/);
+  assert.match(text(page), /Anthropic, PBC/);
+  page = await alice.submit(page, submitForm);
+  assert.match(text(page), /Accept the engagement letter and the consent/);
+  const termsForm = (f) => !!f.querySelector("input[name=signerName]");
+  page = await alice.submit(page, termsForm, { "accept:engagement_letter": true, "accept:irc_7216": true, signerName: "", signerTitle: "" });
+  assert.match(text(page), /Type your full name/);
+  page = await alice.submit(page, termsForm, {
+    "accept:engagement_letter": true,
+    "accept:irc_7216": true,
+    signerName: "Leilani Kahale",
+    signerTitle: "Executive Director",
+  });
+  assert.match(text(page), /Engagement letter: accepted by Leilani Kahale, Executive Director/);
+  assert.match(text(page), /consent accepted/);
+  page = await alice.submit(page, submitForm);
   assert.match(text(page), /In review/);
   assert.match(text(page), /could not be classified/);
   assert.match(text(page), /Statement of Functional Expenses/);
@@ -286,14 +310,78 @@ async function main() {
   assert.doesNotMatch(review.html, /Leilani/, "unclaimed reviewer saw client content");
   review = await rita.submit(review, (f) => !!f.querySelector("input[name=engagementId]"));
   assert.match(text(review), /Account classification/);
+  assert.match(text(review), /Timer running/, "claiming did not start the review timer");
+  assert.match(text(review), /cannot sign until an admin verifies your credential/);
 
   review = await rita.submit(review, (f) => !!f.querySelector("select[name='map:6900']"), {
     "map:6900": "IX.13",
     "text:program.0": "Daily tutoring and homework help for 220 students in grades 3-8.",
   });
   assert.doesNotMatch(text(review), /could not be classified/);
-  review = await rita.submit(review, (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "approve");
+  const approveForm = (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "approve";
+  assert.ok(review.doc.querySelectorAll("form").find(approveForm).querySelector("button[disabled]"), "approve enabled for unverified reviewer");
+  review = await rita.submit(review, approveForm);
+  assert.match(text(review), /credential has not been verified/);
+
+  // Reviewer records a credential; an admin verifies it.
+  let profile = await rita.get("/review/profile");
+  profile = await rita.submit(profile, (f) => !!f.querySelector("input[name=ptin]"), {
+    name: "Rita Reyes",
+    credentialType: "EA",
+    credentialNumber: "00123456",
+    credentialJurisdiction: "IRS",
+    ptin: "P01234567",
+    efin: "123456",
+  });
+  assert.match(text(profile), /Saved\. An admin will verify it/);
+  const { b: ada, landing: adaLanding } = await signIn("ada@easier.company");
+  assert.match(adaLanding.url, /\/review$/);
+  assert.match((await rita.get("/admin")).url, /\/review$/, "reviewer reached the admin page");
+  let admin = await ada.get("/admin");
+  assert.match(text(admin), /EA 00123456 \(IRS\)/);
+  admin = await ada.submit(admin, (f) => f.querySelector("input[name=verified]")?.getAttribute("value") === "yes");
+  assert.match(admin.html, /value="no"/, "credential not verified");
+
+  review = await rita.get(`/review/${engagementId}`);
+  review = await rita.submit(review, approveForm);
   assert.match(text(review), /Approved/);
+  assert.doesNotMatch(text(review), /Timer running/, "approval did not stop the timer");
+
+  // Manual time for work outside the platform.
+  review = await rita.submit(review, (f) => !!f.querySelector("input[name=minutes]"), { minutes: "50", note: "Keyed return into Tax990" });
+  assert.match(text(review), /time added/);
+
+  // Deliver, record e-filing, then IRS acceptance.
+  review = await rita.submit(review, (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "deliver");
+  assert.match(text(review), /Delivered/);
+  const fileForm = (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "record_filing";
+  review = await rita.submit(review, fileForm, { submissionId: "not-an-id" });
+  assert.match(text(review), /20-character IRS submission ID/);
+  review = await rita.submit(review, fileForm, { submissionId: "12345620263200000abc" });
+  assert.match(text(review), /Filed/);
+  review = await rita.submit(review, (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "record_acceptance");
+  assert.match(text(review), /Accepted by IRS/);
+  assert.match(text(review), /12345620263200000ABC/);
+
+  // The keying sheet lists every exported line.
+  const sheet = await rita.get(`/engagements/${engagementId}/package/return.csv`);
+  assert.equal(sheet.status, 200, "return.csv not served");
+  assert.match(sheet.headers.get("content-type"), /text\/csv/);
+  assert.match(sheet.html, /^field,value\r\n/);
+  assert.match(sheet.html, /partI\.12_totalRevenue\.currentYear,487500/);
+  assert.equal((await bob.get(`/engagements/${engagementId}/package/return.csv`)).status, 404);
+
+  // Admin records the invoice and sees the pilot gate.
+  admin = await ada.get("/admin");
+  assert.match(text(admin), /Full 990, mean reviewer hours/);
+  assert.match(text(admin), /1 \/ 0/, "accepted count missing");
+  admin = await ada.submit(admin, (f) => f.querySelector("input[name=engagementId]")?.getAttribute("value") === engagementId, {
+    amount: "1950",
+    issuedOn: "2026-10-01",
+    paidOn: "2026-10-02",
+    reference: "INV-001",
+  });
+  assert.match(text(admin), /\$1,950\.00 issued 2026-10-01, paid 2026-10-02/);
 
   // The approved return downloads as line-numbered data.
   const exported = await rita.get(`/engagements/${engagementId}/package/return.json`);
@@ -308,7 +396,8 @@ async function main() {
   const pkg = await alice.get(`/engagements/${engagementId}/package`);
   assert.equal(pkg.status, 200);
   assert.match(text(pkg), /Daily tutoring and homework help/);
-  assert.match(text(pkg), /Approved \d{4}-\d{2}-\d{2}/);
+  assert.match(text(pkg), /Approved \d{4}-\d{2}-\d{2} by Rita Reyes, EA/);
+  assert.match(text(pkg), /Submission ID: 12345620263200000ABC/);
   const bobPkg = await bob.get(`/engagements/${engagementId}/package`);
   assert.equal(bobPkg.status, 404);
 

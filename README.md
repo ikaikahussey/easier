@@ -52,7 +52,18 @@ drizzle/             SQL migrations, including 0001_tenant_isolation.sql (RLS)
 
 Schedule questions are optional in the intake form (folded by default) and become blocking findings when the schedule applies. Clients can revise their answers until the engagement goes to review. Not prepared: Schedule D Parts I–V (donor advised funds, easements, collections, escrow, endowments), Schedules H and K, Schedule A Part IV (supporting organizations), Schedule R Part VI, Forms 990-T and 4720.
 
-**Export.** The approved return downloads from the package page as line-numbered JSON in whole dollars (`/engagements/{id}/package/return.json`): heading, Parts I–XII, every schedule's detail, Schedule O, the Form 990-EZ line mapping for EZ filers, and the Form 8879-TE Part I values. It is the hand-off to filing software until a transmitter integration exists.
+**Export.** The approved return downloads from the package page as line-numbered JSON in whole dollars (`/engagements/{id}/package/return.json`): heading, Parts I–XII, every schedule's detail, Schedule O, the Form 990-EZ line mapping for EZ filers, and the Form 8879-TE Part I values. The same data downloads as a two-column keying sheet (`return.csv`: field, value) for entering the return into e-file software by hand or mapping it to a bulk-import template. Together they are the hand-off to filing software until a transmitter integration exists.
+
+## Pilot operations
+
+What the November 2026 pilot needs to run real engagements:
+
+- **Engagement terms.** Each product lists the documents a client must accept before submitting (`consents`; text in `src/core/consents.ts`). Form 990 requires the engagement letter and the IRC 7216 consent to disclose return information to the platform and the AI provider. The client signs by typing a name and title; the audit trail records the document version and a SHA-256 hash of the exact text shown. Changing the text or `PREPARER_OF_RECORD` invalidates earlier acceptances. **The wording is a draft for counsel to review.**
+- **Reviewer credentials.** Reviewers record their credential, number, issuer, PTIN, and EFIN at `/review/profile`. An admin checks them with the issuing body and verifies them at `/admin`; an admin cannot verify their own. Approval requires a verified credential that the product accepts (`reviewerCredentials`), and the approval event names the signer. Any change to a credential clears verification.
+- **Reviewer time.** Claiming work in review starts a timer; approving or requesting changes stops it; reviewers can pause and resume, and add minutes for work outside the platform (for example, keying into Tax990). A running timer counts at most 4 hours per session. `/admin` shows mean and maximum reviewer hours per form type against the 6-hour gate for a full Form 990.
+- **E-filing record.** Products with `filedWithIrs` continue past delivery: record the 20-character MeF submission ID (filed), then IRS acceptance or rejection with its date. A rejected return can be refiled or reopened.
+- **Invoices.** Admins record the invoice amount, issue date, paid date, and reference per engagement at `/admin`. No payment processor yet.
+- **Labor Pledge accrual.** `/admin` totals the pledge on signed work until a recipient fund is chosen.
 
 **Classification pipeline:** reviewer override → keyword rule → AI (validated against the account type) → catch-all line flagged for review. AI outputs are cached per draft by input hash, so reviewer edits do not trigger new model calls unless an AI input changed. Without `ANTHROPIC_API_KEY`, deterministic fallbacks run and unmatched accounts are routed to the reviewer.
 
@@ -93,8 +104,8 @@ npm run check      # typecheck → unit/integration tests → production build �
 - `tests/core.test.ts`, `tests/products.test.ts`: parsing, classification, deadlines, rules, form selection, schedules, allocation, pledge.
 - `tests/schedules.test.ts`: each schedule's computation against figures worked by hand from the fixtures.
 - `tests/core-form.test.ts`: form selection by age, Part IV answers, Part VII, Part XI reconciliation, Parts V–VI, Schedules E, N, C averaging, R Part V, D Parts VII–X, and the export.
-- `tests/services.test.ts`: full lifecycle plus tenant isolation against real Postgres (PGlite) with RLS.
-- `scripts/e2e.mjs`: drives the production build through plain HTML forms (no JavaScript) for sign-in, intake, upload, AI draft, reviewer claim, reclassify, and approve, plus cross-tenant 404s.
+- `tests/services.test.ts`: full lifecycle plus tenant isolation against real Postgres (PGlite) with RLS, and pilot operations (consents, credentials, review time, e-filing record, invoices, metrics).
+- `scripts/e2e.mjs`: drives the production build through plain HTML forms (no JavaScript) for sign-in, intake, upload, engagement terms, AI draft, reviewer claim, reclassify, credential verification, approve, e-filing record, keying sheet, and invoice, plus cross-tenant 404s.
 
 ## Deploying (Vercel + Neon)
 
@@ -103,4 +114,5 @@ Set the variables in `.env.example`. `DATABASE_URL`, `DATA_ENCRYPTION_KEY` (`ope
 ## Not yet built
 
 - IRS e-file transmission (MeF) and Form 8879-TE e-signature. Approved work produces a review package today. No vendor yet offers a verified API for full 990/990-EZ data; see the e-file options note in the project.
-- Payments, multistate charity registration, document (PDF) intake, and reviewer credential verification.
+- Payment processing, multistate charity registration, document (PDF) intake, and automated credential lookups (credentials are verified by an admin).
+- A column mapping from the keying sheet to Tax990's bulk-import templates; it needs the template files from a Tax990 professional account.

@@ -398,6 +398,8 @@ export const form990 = defineProduct<Form990Intake, Form990Data>({
   tagline: "Your annual nonprofit return, prepared from your books and signed by an enrolled agent or CPA.",
   status: "live",
   reviewerCredentials: ["EA", "CPA"],
+  consents: ["engagement_letter", "irc_7216"],
+  filedWithIrs: true,
   period: { name: "period", type: "date", label: "Fiscal year end date", required: true },
   intake: FORM_990_INTAKE,
   documents: [TRIAL_BALANCE],

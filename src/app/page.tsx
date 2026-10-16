@@ -100,17 +100,17 @@ const Headline = () => (
 const COMING: { area: string; items: string[] }[] = [
   { area: "Taxes", items: ["Nonprofit annual returns (Form 990)", "Quarterly estimates", "Business and personal returns"] },
   { area: "Books", items: ["Monthly close and reconciliation", "Board-ready financial statements", "Year-end cleanup"] },
-  { area: "Audits", items: ["Audit preparation", "Annual nonprofit audits", "Grant and funder reporting"] },
+  { area: "Audit readiness", items: ["Audit preparation and schedules", "Single Audit readiness", "Grant and funder reporting"] },
   { area: "Securities", items: ["Private offering paperwork", "Exempt-offering filings", "Ongoing investor compliance"] },
-  { area: "Legal", items: ["Formation and governance documents", "Contracts and policies", "The paperwork you'd otherwise buy a manual for"] },
-  { area: "Fundraising", items: ["Campaign feasibility and capacity studies", "Donor research", "Grant applications"] },
+  { area: "Documents", items: ["Formation and governance templates", "Board policies", "The paperwork you'd otherwise buy a manual for"] },
+  { area: "Fundraising research", items: ["Donor and prospect research", "Grant research and applications", "Campaign planning data"] },
 ];
 
 const PROMISES: [string, string][] = [
   ["Flat prices, published", "You see the price before you start. No hourly billing."],
-  ["A professional signs", "Software prepares the work. A licensed professional reviews and signs every deliverable."],
+  ["A professional checks", "Software prepares the work. A qualified professional reviews it, and an enrolled agent or CPA signs every tax return."],
   ["Your data, walled off", "Each client's records are encrypted with their own key and kept separate from everyone else's."],
-  ["Workers paid in", "On every job, we pay Social Security contributions on the hours the software saves, toward worker retirement."],
+  ["Workers paid in", "On every job, we contribute toward worker retirement what Social Security payroll tax would have paid on the hours the software saves."],
 ];
 
 /** Public pre-launch page. Everything else requires an invited sign-in. */
@@ -120,9 +120,9 @@ function Teaser({ joined, error }: { joined?: string; error?: string }) {
       <Headline />
       <p className="kicker mt-6 text-sm sm:text-base">Coming soon</p>
       <p className="mt-4 max-w-[58ch] text-[17px] text-on-bg">
-        The work you would hire a firm for, at a price that makes sense for a small organization. Taxes, books, audits,
-        securities filings, legal paperwork, and fundraising studies: prepared by software, checked and signed by a licensed
-        professional, for a flat fee you see up front.
+        The work you would hire a firm for, at a price that makes sense for a small organization. Taxes, books, audit
+        readiness, securities paperwork, governance documents, and fundraising research: prepared by software and checked by
+        a qualified professional, for a flat fee you see up front.
       </p>
       <p className="mt-7">
         <a href="#waitlist" className={buttonClass("primary")}>

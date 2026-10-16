@@ -5,12 +5,23 @@ import { revalidatePath } from "next/cache";
 import { parseForm } from "@/core/fields";
 import { consumeLogin, joinWaitlist, requestLogin, sendLoginLink, type WaitlistKind } from "@/core/services/auth";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/core/services/context";
-import { claim, createEngagement, saveReview, transition, updateIntake, uploadDocument, MAX_UPLOAD_BYTES } from "@/core/services/engagements";
+import {
+  acceptConsents,
+  claim,
+  createEngagement,
+  saveReview,
+  transition,
+  updateIntake,
+  uploadDocument,
+  MAX_UPLOAD_BYTES,
+} from "@/core/services/engagements";
+import { addReviewTime, recordInvoice, startReviewTimer, stopReviewTimer } from "@/core/services/operations";
+import { setCredentialVerified, submitCredential } from "@/core/services/reviewers";
 import { createOrganization } from "@/core/services/organizations";
 import { WorkflowError, type Action } from "@/core/workflow";
 import { CryptoError } from "@/core/crypto";
 import { getProduct } from "@/products";
-import { endSession, requireActor, requireStaff, startSession } from "@/ui/session";
+import { endSession, requireActor, requireAdmin, requireStaff, startSession } from "@/ui/session";
 
 const str = (fd: FormData, k: string) => {
   const v = fd.get(k);
@@ -135,12 +146,27 @@ export async function uploadDocumentAction(fd: FormData) {
   });
 }
 
+export async function acceptConsentsAction(fd: FormData) {
+  const actor = await requireActor();
+  const id = str(fd, "engagementId");
+  await attempt(`/engagements/${id}`, async () => {
+    await acceptConsents(actor, id, {
+      documents: [...fd.keys()].filter((k) => k.startsWith("accept:") && fd.get(k)).map((k) => k.slice("accept:".length)),
+      signerName: str(fd, "signerName"),
+      signerTitle: str(fd, "signerTitle"),
+    });
+  });
+}
+
 export async function transitionAction(fd: FormData) {
   const actor = await requireActor();
   const id = str(fd, "engagementId");
   const back = str(fd, "back") === "review" ? `/review/${id}` : `/engagements/${id}`;
   await attempt(back, async () => {
-    await transition(actor, id, str(fd, "action") as Action, str(fd, "note") || undefined);
+    await transition(actor, id, str(fd, "action") as Action, str(fd, "note") || undefined, {
+      submissionId: str(fd, "submissionId") || undefined,
+      date: str(fd, "date") || undefined,
+    });
   });
 }
 
@@ -170,5 +196,58 @@ export async function saveReviewAction(fd: FormData) {
       if (kind === "text" && (wasOverride || changed)) text[key] = v;
     }
     await saveReview(actor, id, { mappings, text });
+  });
+}
+
+export async function reviewTimerAction(fd: FormData) {
+  const actor = await requireStaff();
+  const id = str(fd, "engagementId");
+  await attempt(`/review/${id}`, async () => {
+    if (str(fd, "timer") === "start") await startReviewTimer(actor, id);
+    else await stopReviewTimer(actor, id);
+  });
+}
+
+export async function addReviewTimeAction(fd: FormData) {
+  const actor = await requireStaff();
+  const id = str(fd, "engagementId");
+  await attempt(`/review/${id}`, async () => {
+    await addReviewTime(actor, id, Number(str(fd, "minutes")), str(fd, "note"));
+  });
+}
+
+export async function submitCredentialAction(fd: FormData) {
+  const actor = await requireStaff();
+  await attempt("/review/profile", async () => {
+    await submitCredential(actor, {
+      name: str(fd, "name"),
+      credentialType: str(fd, "credentialType"),
+      credentialNumber: str(fd, "credentialNumber"),
+      credentialJurisdiction: str(fd, "credentialJurisdiction"),
+      ptin: str(fd, "ptin"),
+      efin: str(fd, "efin"),
+    });
+    return "/review/profile?saved=1";
+  });
+}
+
+// ── Admin ────────────────────────────────────────────────────────────────────
+
+export async function verifyCredentialAction(fd: FormData) {
+  const actor = await requireAdmin();
+  await attempt("/admin", async () => {
+    await setCredentialVerified(actor, str(fd, "reviewerId"), str(fd, "verified") === "yes");
+  });
+}
+
+export async function recordInvoiceAction(fd: FormData) {
+  const actor = await requireAdmin();
+  await attempt("/admin", async () => {
+    await recordInvoice(actor, str(fd, "engagementId"), {
+      amount: str(fd, "amount"),
+      issuedOn: str(fd, "issuedOn"),
+      paidOn: str(fd, "paidOn") || undefined,
+      reference: str(fd, "reference") || undefined,
+    });
   });
 }

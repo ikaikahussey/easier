@@ -3,17 +3,19 @@ import { notFound } from "next/navigation";
 import { getEngagement } from "@/core/services/engagements";
 import { NotFoundError } from "@/core/services/context";
 import { getProduct } from "@/products";
-import { Card, Findings, Shell, Worksheet } from "@/ui/components";
+import { Card, FilingSummary, Findings, Shell, Worksheet } from "@/ui/components";
+import { SIGNED } from "@/core/workflow";
 import { requireActor } from "@/ui/session";
 
 export default async function PackagePage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requireActor();
   const { id } = await params;
   const e = await getEngagement(actor, id).catch((err) => (err instanceof NotFoundError ? notFound() : Promise.reject(err)));
-  const ready = e.status === "approved" || e.status === "delivered";
+  const ready = SIGNED.includes(e.status);
   if (!e.accessible || !e.draft || (actor.role === "client" && !ready)) notFound();
   const product = getProduct(e.product);
   const approval = e.events.find((x) => x.type === "status:approve");
+  const signer = approval?.payload?.signer as { name: string; credential: string } | undefined;
 
   return (
     <Shell actor={actor}>
@@ -25,15 +27,25 @@ export default async function PackagePage({ params }: { params: Promise<{ id: st
         <p className="mt-2 text-sm text-muted">
           Draft version {e.draft.version}
           {approval ? ` · Approved ${approval.createdAt.toISOString().slice(0, 10)}` : " · Not yet approved"}
+          {signer && ` by ${signer.name}, ${signer.credential}`}
         </p>
       </header>
       {product.export && (
         <p className="mb-6 text-sm">
-          <Link href={`/engagements/${e.id}/package/return.json`} prefetch={false}>
-            Download the return as line-numbered data (JSON)
+          Download the return for entry into filing software:{" "}
+          <Link href={`/engagements/${e.id}/package/return.csv`} prefetch={false}>
+            keying sheet (CSV)
           </Link>{" "}
-          <span className="text-muted">for entry into filing software.</span>
+          ·{" "}
+          <Link href={`/engagements/${e.id}/package/return.json`} prefetch={false}>
+            line-numbered data (JSON)
+          </Link>
         </p>
+      )}
+      {e.filing && (
+        <Card title="E-filing">
+          <FilingSummary filing={e.filing} />
+        </Card>
       )}
       <Worksheet sections={e.draft.snapshot.sections} />
       <Card title="Review notes">

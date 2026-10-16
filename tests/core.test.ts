@@ -7,6 +7,9 @@ import { classifyAccounts } from "@/core/ledger/catalog";
 import { deadline, legalHolidays } from "@/core/deadlines";
 import { formDataToObject, objectToFormValues, parseForm, type FormSpec } from "@/core/fields";
 import { availableActions, nextStatus, WorkflowError } from "@/core/workflow";
+import { elapsedSeconds, formatDuration, MAX_TIMER_SECONDS } from "@/core/review-time";
+import { flatten, toCsv } from "@/core/flatten";
+import { consentHash, renderConsent } from "@/core/consents";
 import { runRules, adaptRules } from "@/core/rules";
 import { AiRunner, type AiTask, type Llm } from "@/core/ai/llm";
 import { NONPROFIT_CATALOG } from "@/domains/nonprofit/lines";
@@ -152,6 +155,58 @@ describe("workflow", () => {
     expect(() => nextStatus("in_review", "request_changes", { role: "reviewer", errorCount: 0 })).toThrow(/note/);
     expect(nextStatus("in_review", "approve", { role: "reviewer", errorCount: 0 })).toBe("approved");
     expect(availableActions("approved", "reviewer").sort()).toEqual(["deliver", "reopen"]);
+  });
+
+  it("adds e-filing states only for products filed with the IRS", () => {
+    expect(availableActions("delivered", "reviewer")).toEqual([]);
+    expect(availableActions("delivered", "reviewer", { filing: true })).toEqual(["record_filing"]);
+    expect(availableActions("filed", "admin", { filing: true }).sort()).toEqual(["record_acceptance", "record_rejection"]);
+    expect(availableActions("rejected", "reviewer", { filing: true }).sort()).toEqual(["record_filing", "reopen"]);
+    expect(availableActions("accepted", "admin", { filing: true })).toEqual([]);
+    expect(() => nextStatus("delivered", "record_filing", { role: "reviewer", errorCount: 0 })).toThrow(/not filed/);
+    expect(() => nextStatus("filed", "record_rejection", { role: "reviewer", errorCount: 0, filing: true })).toThrow(/note/);
+    expect(nextStatus("filed", "record_acceptance", { role: "reviewer", errorCount: 0, filing: true })).toBe("accepted");
+  });
+});
+
+describe("review time", () => {
+  it("caps a forgotten timer and formats durations", () => {
+    const start = new Date("2026-10-01T00:00:00Z");
+    expect(elapsedSeconds(start, new Date("2026-10-01T01:30:00Z"))).toBe(5400);
+    expect(elapsedSeconds(start, new Date("2026-10-02T00:00:00Z"))).toBe(MAX_TIMER_SECONDS);
+    expect(elapsedSeconds(start, new Date("2026-09-30T00:00:00Z"))).toBe(0);
+    expect(formatDuration(0)).toBe("0 m");
+    expect(formatDuration(42 * 60)).toBe("42 m");
+    expect(formatDuration(3900)).toBe("1 h 05 m");
+  });
+});
+
+describe("keying sheet", () => {
+  it("flattens nested export data into field/value rows", () => {
+    const rows = flatten({ form: "990", partI: { "12_totalRevenue": { currentYear: 487500, priorYear: undefined } }, partIV: [true, false], x: null, y: "" });
+    expect(rows).toEqual([
+      ["form", "990"],
+      ["partI.12_totalRevenue.currentYear", "487500"],
+      ["partIV.1", "Yes"],
+      ["partIV.2", "No"],
+    ]);
+  });
+
+  it("quotes commas, quotes, and anything a spreadsheet would run as a formula", () => {
+    expect(toCsv([["a", 'Kōkua "Learning", Inc.'], ["b", "=HYPERLINK(1)"], ["c", "-5"]])).toBe(
+      'field,value\r\na,"Kōkua ""Learning"", Inc."\r\nb,"=HYPERLINK(1)"\r\nc,"-5"\r\n',
+    );
+  });
+});
+
+describe("consents", () => {
+  it("hashes the exact text shown, so a wording change invalidates prior acceptance", () => {
+    const c = { orgName: "Org A", productName: "Form 990 preparation", period: "2025-12-31", preparer: "Jane Doe, EA", filed: true };
+    expect(consentHash("irc_7216", c)).toBe(consentHash("irc_7216", { ...c }));
+    expect(consentHash("irc_7216", c)).not.toBe(consentHash("irc_7216", { ...c, preparer: "John Roe, CPA" }));
+    expect(consentHash("engagement_letter", c)).not.toBe(consentHash("engagement_letter", { ...c, filed: false }));
+    const text = renderConsent("irc_7216", c).join(" ");
+    for (const required of ["Org A", "Jane Doe, EA", "Anthropic", "TIGTA", "one year"]) expect(text).toContain(required);
   });
 });
 

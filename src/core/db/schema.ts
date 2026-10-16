@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   foreignKey,
   index,
   integer,
@@ -19,6 +20,21 @@ import {
  * Columns ending in _enc hold ciphertext sealed with the org's data key.
  */
 
+export interface Filing {
+  submissionId: string;
+  filedOn: string;
+  acknowledgedOn?: string;
+  result?: "accepted" | "rejected";
+  rejectionNote?: string;
+}
+
+export interface Invoice {
+  amountCents: number;
+  issuedOn: string;
+  paidOn?: string;
+  reference?: string;
+}
+
 const id = () => uuid("id").primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -28,6 +44,17 @@ export const users = pgTable("users", {
   name: text("name"),
   role: text("role", { enum: ["client", "reviewer", "admin"] }).notNull().default("client"),
   credentials: text("credentials"),
+  /** Reviewer credential, e.g. "EA" or "CPA"; must match a product's reviewerCredentials to approve it. */
+  credentialType: text("credential_type"),
+  credentialNumber: text("credential_number"),
+  /** Issuing state for a CPA license; "IRS" for an enrolled agent. */
+  credentialJurisdiction: text("credential_jurisdiction"),
+  ptin: text("ptin"),
+  efin: text("efin"),
+  credentialSubmittedAt: timestamp("credential_submitted_at", { withTimezone: true }),
+  /** Set by an admin after checking the credential against the issuing body. Cleared when the credential changes. */
+  credentialVerifiedAt: timestamp("credential_verified_at", { withTimezone: true }),
+  credentialVerifiedBy: uuid("credential_verified_by").references((): AnyPgColumn => users.id),
   createdAt: createdAt(),
 });
 
@@ -98,6 +125,14 @@ export const engagements = pgTable(
     assignedReviewerId: uuid("assigned_reviewer_id").references(() => users.id),
     errorCount: integer("error_count").notNull().default(0),
     warningCount: integer("warning_count").notNull().default(0),
+    /** Active reviewer time in seconds, accumulated from the review timer and manual entries. */
+    reviewSeconds: integer("review_seconds").notNull().default(0),
+    /** Set while the review timer is running. */
+    reviewStartedAt: timestamp("review_started_at", { withTimezone: true }),
+    /** E-file record after delivery: submission ID and IRS acknowledgement. */
+    filing: jsonb("filing").$type<Filing>(),
+    /** Manual invoice record (pilot); no payment processor yet. */
+    invoice: jsonb("invoice").$type<Invoice>(),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
