@@ -16,6 +16,8 @@ import {
   MAX_UPLOAD_BYTES,
 } from "@/core/services/engagements";
 import { addReviewTime, recordInvoice, startReviewTimer, stopReviewTimer } from "@/core/services/operations";
+import { addShift, deleteShift, fillTimesheetFromSchedule, GENERATORS, saveEmployee, setEmployeeActive, setTimeEntry } from "@/core/services/payroll";
+import { EMPLOYEE_FORM, profileFromForm, type EmployeeFormValues } from "@/products/payroll/employee-form";
 import { setCredentialVerified, submitCredential } from "@/core/services/reviewers";
 import { createOrganization } from "@/core/services/organizations";
 import { WorkflowError, type Action } from "@/core/workflow";
@@ -252,5 +254,96 @@ export async function recordInvoiceAction(fd: FormData) {
       paidOn: str(fd, "paidOn") || undefined,
       reference: str(fd, "reference") || undefined,
     });
+  });
+}
+
+// ── Payroll ──────────────────────────────────────────────────────────────────
+
+/** Create or update an employee from the shared employee form; errors return with the typed values. */
+export async function saveEmployeeAction(_prev: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor();
+  const orgId = str(fd, "orgId");
+  const employeeId = str(fd, "employeeId") || undefined;
+  try {
+    const parsed = parseForm<EmployeeFormValues>(fd, EMPLOYEE_FORM);
+    if (!parsed.ok) throw new ValidationError(parsed.errors);
+    await saveEmployee(actor, orgId, profileFromForm(parsed.data), employeeId);
+  } catch (err) {
+    const values: Record<string, string> = {};
+    for (const [k, v] of fd.entries()) if (typeof v === "string") values[k] = v;
+    return { error: message(err), values };
+  }
+  revalidatePath(`/app/orgs/${orgId}/payroll`);
+  redirect(`/app/orgs/${orgId}/payroll?saved=1`);
+}
+
+export async function setEmployeeActiveAction(fd: FormData) {
+  const actor = await requireActor();
+  const orgId = str(fd, "orgId");
+  await attempt(`/app/orgs/${orgId}/payroll`, async () => {
+    await setEmployeeActive(actor, orgId, str(fd, "employeeId"), str(fd, "active") === "yes");
+  });
+}
+
+export async function addShiftAction(fd: FormData) {
+  const actor = await requireActor();
+  const orgId = str(fd, "orgId");
+  const back = `/app/orgs/${orgId}/payroll/schedule?week=${encodeURIComponent(str(fd, "week"))}`;
+  await attempt(back, async () => {
+    await addShift(actor, orgId, {
+      employeeId: str(fd, "employeeId"),
+      date: str(fd, "date"),
+      startTime: str(fd, "startTime"),
+      endTime: str(fd, "endTime"),
+      breakMinutes: Number(str(fd, "breakMinutes") || 0),
+      note: str(fd, "note") || undefined,
+    });
+  });
+}
+
+export async function deleteShiftAction(fd: FormData) {
+  const actor = await requireActor();
+  const orgId = str(fd, "orgId");
+  const back = `/app/orgs/${orgId}/payroll/schedule?week=${encodeURIComponent(str(fd, "week"))}`;
+  await attempt(back, async () => {
+    await deleteShift(actor, orgId, str(fd, "shiftId"));
+  });
+}
+
+/** The timesheet grid posts every cell; only cells that changed are written. */
+export async function saveTimesheetAction(fd: FormData) {
+  const actor = await requireActor();
+  const orgId = str(fd, "orgId");
+  const back = `/app/orgs/${orgId}/payroll/timesheet?week=${encodeURIComponent(str(fd, "week"))}`;
+  await attempt(back, async () => {
+    for (const [k, v] of fd.entries()) {
+      if (typeof v !== "string" || !k.startsWith("hours:")) continue;
+      const [, employeeId, date] = k.split(":") as [string, string, string];
+      if (str(fd, `orig:${employeeId}:${date}`) === v) continue;
+      await setTimeEntry(actor, orgId, { employeeId, date, hours: v.trim() === "" ? 0 : Number(v) });
+    }
+    return `${back}&saved=1`;
+  });
+}
+
+export async function fillTimesheetAction(fd: FormData) {
+  const actor = await requireActor();
+  const orgId = str(fd, "orgId");
+  const back = `/app/orgs/${orgId}/payroll/timesheet?week=${encodeURIComponent(str(fd, "week"))}`;
+  await attempt(back, async () => {
+    const n = await fillTimesheetFromSchedule(actor, orgId, str(fd, "from"), str(fd, "to"));
+    return `${back}&filled=${n}`;
+  });
+}
+
+/** Write platform-generated documents (for a pay run: roster and timesheet) onto an engagement. */
+export async function prepareDocumentsAction(fd: FormData) {
+  const actor = await requireActor();
+  const id = str(fd, "engagementId");
+  await attempt(`/engagements/${id}`, async () => {
+    const generate = GENERATORS[str(fd, "product")];
+    if (!generate) throw new ValidationError(["This engagement has nothing to prepare"]);
+    const r = await generate(actor, id);
+    return `/engagements/${id}?prepared=${encodeURIComponent(`${r.employees} employee${r.employees === 1 ? "" : "s"}, ${r.timesheetLines} timesheet day${r.timesheetLines === 1 ? "" : "s"}, ${r.hours} hours`)}`;
   });
 }

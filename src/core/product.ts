@@ -33,6 +33,8 @@ export interface DocumentKind {
   help: string;
   accept: string;
   required: boolean;
+  /** The platform can write this document from the organization's own records (see services/generators). Uploading is still allowed. */
+  generated?: boolean;
   /** Parse raw upload text into structured data; throw with a readable message on failure. */
   parse: (text: string) => unknown;
 }
@@ -119,6 +121,8 @@ export interface ProductDefinition<I = any, D = any> {
   filedWithIrs?: boolean;
   period: FieldSpec & { name: "period" };
   intake: FormSpec;
+  /** Prefilled answers for a new engagement's intake form, as form values. */
+  intakeDefaults?: Record<string, string>;
   documents: DocumentKind[];
   deadline?: (period: string) => Deadline;
   /** Price from intake alone, refined once a draft exists. */

@@ -42,6 +42,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               ))}
           </ul>
           <div className="mt-4 flex flex-wrap gap-2">
+            <Link href={`/app/orgs/${org.id}/payroll`} className={buttonClass("quiet")}>
+              Payroll: employees, schedule, timesheet
+            </Link>
             {PRODUCTS.map((p) => (
               <Link
                 key={p.slug}

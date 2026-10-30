@@ -143,7 +143,7 @@ export function assertCanAct(actor: Actor, e: EngagementRow) {
     throw new ForbiddenError("Claim this engagement before working on it");
 }
 
-async function latestDraft(tx: Tx, vault: OrgVault, engagementId: string) {
+export async function latestDraft(tx: Tx, vault: OrgVault, engagementId: string) {
   const [d] = await tx
     .select()
     .from(drafts)
@@ -323,30 +323,41 @@ export async function uploadDocument(
     assertCanAct(actor, e);
     if (!["awaiting_documents", "changes_requested", "in_review"].includes(e.status))
       throw new WorkflowError("Documents can no longer be changed for this engagement");
-    const kind = getProduct(e.product).documents.find((d) => d.kind === file.kind);
-    if (!kind) throw new ValidationError([`Unknown document type: ${file.kind}`]);
-    let parsed: unknown;
-    try {
-      parsed = kind.parse(file.text);
-    } catch (err) {
-      throw new ValidationError([`${kind.label}: ${(err as Error).message}`]);
-    }
-    const vault = await vaultFor(tx, e.orgId);
-    const id = crypto.randomUUID();
-    await tx.insert(documents).values({
-      id,
-      orgId: e.orgId,
-      engagementId: e.id,
-      kind: kind.kind,
-      filename: file.filename.slice(0, 200),
-      size: bytes,
-      sha256: sha256(file.text),
-      contentEnc: vault.seal(file.text, ctx.docContent(id)),
-      parsedEnc: vault.seal(parsed, ctx.docParsed(id)),
-      createdBy: actor.id,
-    });
-    await logEvent(tx, vault, e, actor, "document_uploaded", { kind: kind.kind, filename: file.filename });
+    await storeDocument(tx, await vaultFor(tx, e.orgId), e, actor, file, "document_uploaded");
   });
+}
+
+/** Parse, seal, and record one document; shared by uploads and platform-generated files. */
+export async function storeDocument(
+  tx: Tx,
+  vault: OrgVault,
+  e: Pick<EngagementRow, "id" | "orgId" | "product">,
+  actor: Actor,
+  file: { kind: string; filename: string; text: string },
+  event: "document_uploaded" | "document_generated",
+): Promise<void> {
+  const kind = getProduct(e.product).documents.find((d) => d.kind === file.kind);
+  if (!kind) throw new ValidationError([`Unknown document type: ${file.kind}`]);
+  let parsed: unknown;
+  try {
+    parsed = kind.parse(file.text);
+  } catch (err) {
+    throw new ValidationError([`${kind.label}: ${(err as Error).message}`]);
+  }
+  const id = crypto.randomUUID();
+  await tx.insert(documents).values({
+    id,
+    orgId: e.orgId,
+    engagementId: e.id,
+    kind: kind.kind,
+    filename: file.filename.slice(0, 200),
+    size: Buffer.byteLength(file.text),
+    sha256: sha256(file.text),
+    contentEnc: vault.seal(file.text, ctx.docContent(id)),
+    parsedEnc: vault.seal(parsed, ctx.docParsed(id)),
+    createdBy: actor.id,
+  });
+  await logEvent(tx, vault, e, actor, event, { kind: kind.kind, filename: file.filename });
 }
 
 /** Build a new draft version from the latest documents and the given overrides. */
