@@ -32,7 +32,7 @@ export default async function PackagePage({ params }: { params: Promise<{ id: st
       </header>
       {product.export && (
         <p className="mb-6 text-sm">
-          Download the return for entry into filing software:{" "}
+          {product.filedWithIrs ? "Download the return for entry into filing software:" : "Download the approved data (payments, pay stubs, journal entries):"}{" "}
           <Link href={`/engagements/${e.id}/package/return.csv`} prefetch={false}>
             keying sheet (CSV)
           </Link>{" "}
@@ -52,8 +52,9 @@ export default async function PackagePage({ params }: { params: Promise<{ id: st
         <Findings findings={e.draft.snapshot.findings} />
       </Card>
       <p className="text-xs text-muted">
-        This package is the preparer&apos;s worksheet supporting the return. The return is filed electronically after the
-        organization&apos;s authorized officer signs Form 8879-TE.
+        {product.filedWithIrs
+          ? "This package is the preparer's worksheet supporting the return. The return is filed electronically after the organization's authorized officer signs Form 8879-TE."
+          : "This package is the reviewer's worksheet supporting the approved work."}
       </p>
     </Shell>
   );

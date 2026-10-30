@@ -266,7 +266,7 @@ async function main() {
   assert.match(text(page), /intake updated/);
 
   page = await alice.submit(page, (f) => !!f.querySelector("input[type=file]"), {}, { file: { name: "tb.csv", content: fixture("tb-990.csv") } });
-  assert.match(text(page), /Uploaded: tb\.csv/);
+  assert.match(text(page), /On file: tb\.csv/);
 
   // Engagement terms come first: submit is disabled, and forcing it is refused.
   const submitForm = (f) => f.querySelector("input[name=action]")?.getAttribute("value") === "submit";
@@ -396,6 +396,70 @@ async function main() {
   assert.match(text(pkg), /Submission ID: 12345620263200000abc/);
   const bobPkg = await bob.get(`/engagements/${engagementId}/package`);
   assert.equal(bobPkg.status, 404);
+
+  // Easier Payroll: employee, schedule, timesheet, pay run prepared from records, reviewed, exported.
+  const dash = await alice.get("/app");
+  let payroll = await alice.get(dash.doc.querySelectorAll("a").find((a) => /\/payroll$/.test(a.getAttribute("href") ?? "")).getAttribute("href"));
+  assert.match(text(payroll), /No employees yet/);
+  const orgPayrollUrl = payroll.url;
+  let newEmp = await alice.get(`${orgPayrollUrl}/employees/new`);
+  const badEmp = await alice.submit(newEmp, (f) => !!f.querySelector("input[name=firstName]"), { firstName: "Kai", lastName: "Lee", payType: "hourly", rate: "22", paymentMethod: "direct_deposit", routing: "12", fedStatus: "single", hiStatus: "single" });
+  assert.match(text(badEmp), /Routing number must have 9 digits/);
+  assert.equal(badEmp.doc.querySelector("input[name=firstName]")?.getAttribute("value"), "Kai", "employee values were lost");
+  payroll = await alice.submit(newEmp, (f) => !!f.querySelector("input[name=firstName]"), { firstName: "Kai", lastName: "Lee", payType: "hourly", rate: "22", paymentMethod: "check", fedStatus: "single", hiStatus: "single", hiAllowances: "1" });
+  assert.match(text(payroll), /Employee saved/);
+  assert.match(text(payroll), /Kai Lee/);
+  const empLink = payroll.doc.querySelectorAll("a").find((a) => /\/employees\/[0-9a-f-]{36}$/.test(a.getAttribute("href") ?? ""));
+  const empId = empLink.getAttribute("href").split("/").pop();
+  const editEmp = await alice.get(empLink.getAttribute("href"));
+  assert.equal(editEmp.doc.querySelector("input[name=rate]")?.getAttribute("value"), "22", "employee not prefilled");
+
+  let schedule = await alice.get(`${orgPayrollUrl}/schedule?week=2026-03-02`);
+  for (const date of ["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06"])
+    schedule = await alice.submit(schedule, (f) => !!f.querySelector("select[name=employeeId]"), { employeeId: empId, date, startTime: "08:00", endTime: "17:30", breakMinutes: "30" });
+  assert.match(text(schedule), /08:00–17:30 \(30m break\)/);
+  assert.match(text(schedule), /\b45\b/, "weekly scheduled hours missing");
+
+  let timesheet = await alice.get(`${orgPayrollUrl}/timesheet?week=2026-03-02`);
+  timesheet = await alice.submit(timesheet, (f) => !!f.querySelector("input[name=from]"));
+  assert.match(text(timesheet), /5 days copied from the schedule/);
+  assert.equal(timesheet.doc.querySelector(`input[name='hours:${empId}:2026-03-03']`)?.getAttribute("value"), "9");
+  timesheet = await alice.submit(timesheet, (f) => !!f.querySelector(`input[name='hours:${empId}:2026-03-02']`), { [`hours:${empId}:2026-03-02`]: "10", [`hours:${empId}:2026-03-06`]: "" });
+  assert.match(text(timesheet), /Timesheet saved/);
+  assert.equal(timesheet.doc.querySelector(`input[name='hours:${empId}:2026-03-02']`)?.getAttribute("value"), "10");
+  assert.equal(timesheet.doc.querySelector(`input[name='hours:${empId}:2026-03-06']`)?.getAttribute("value"), "");
+
+  const runIntake = await alice.get(`${orgPayrollUrl.replace(/\/payroll$/, "")}/new?product=payroll`);
+  assert.equal(runIntake.doc.querySelector("input[name=uiRate]")?.getAttribute("value"), "2.4", "intake defaults missing");
+  let run = await alice.submit(runIntake, (f) => !!f.querySelector("input[name=periodStart]"), {
+    period: "2026-03-15", periodStart: "2026-03-02", payDate: "2026-03-20", frequency: "biweekly", workweekStart: "1", uiRate: "2.4", futaExempt: true, deductTdi: "yes",
+  });
+  assert.match(run.url, /\/engagements\/[0-9a-f-]{36}$/, `pay run not created: ${text(run).slice(0, 300)}`);
+  const runUrl = run.url;
+  run = await alice.submit(run, (f) => f.querySelector("input[name=product]")?.getAttribute("value") === "payroll");
+  assert.match(text(run), /Prepared from your records: 1 employee, 4 timesheet days, 37 hours/);
+  assert.match(text(run), /On file: roster-2026-03-15\.csv/);
+  run = await alice.submit(run, termsForm("engagement_letter"), { accept: true, signerName: "Leilani Kahale", signerTitle: "Executive Director" });
+  run = await alice.submit(run, submitForm);
+  assert.match(text(run), /In review/);
+  assert.match(text(run), /Pay register/);
+  assert.match(text(run), /\$814\.00/, "gross pay missing (37 h × $22)");
+  assert.match(text(run), /Journal entry: Payroll 2026-03-02 to 2026-03-15/);
+  const runId = runUrl.split("/").pop();
+  assert.equal((await bob.get(runUrl)).status, 404);
+
+  let runReview = await rita.get(`/review/${runId}`);
+  runReview = await rita.submit(runReview, (f) => !!f.querySelector("input[name=engagementId]"));
+  assert.match(text(runReview), /Pay register/);
+  runReview = await rita.submit(runReview, approveForm);
+  assert.match(text(runReview), /Approved/);
+  const payExport = await alice.get(`/engagements/${runId}/package/return.json`);
+  assert.equal(payExport.status, 200, "payroll export not served");
+  const payData = JSON.parse(payExport.html);
+  assert.equal(payData.product, "payroll");
+  assert.equal(payData.payments[0].name, "Kai Lee");
+  assert.equal(payData.journal.length, 2);
+  assert.equal(payData.payStubs[0].gross, 81400);
 
   const audit = await alice.get(engagementUrl);
   assert.match(text(audit), /staff viewed/);

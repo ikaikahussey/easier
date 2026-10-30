@@ -24,7 +24,7 @@ export default async function NewEngagement({
       <p className="text-sm text-muted">{org.name}</p>
       <h1 className="mb-2 text-3xl font-semibold">{product.name}</h1>
       <p className="mb-6 max-w-2xl text-muted">{product.tagline}</p>
-      <IntakeForm orgId={org.id} product={product.slug} periodLabel={product.period.label} form={product.intake} />
+      <IntakeForm orgId={org.id} product={product.slug} periodLabel={product.period.label} form={product.intake} initial={product.intakeDefaults} />
     </Shell>
   );
 }

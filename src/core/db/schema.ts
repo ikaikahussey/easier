@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  boolean,
   foreignKey,
   index,
   integer,
@@ -178,6 +179,65 @@ export const drafts = pgTable(
     createdAt: createdAt(),
   },
   (t) => [engagementChild(t, "drafts_engagement_fk"), unique("drafts_engagement_version").on(t.engagementId, t.version)],
+);
+
+/**
+ * Payroll records live at the organization level, outside any engagement: employees are
+ * ongoing, and schedules and timesheets accumulate between pay runs. Only members read
+ * them. A pay run copies what it needs into engagement documents, which is how staff see it.
+ */
+export const employees = pgTable(
+  "employees",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    active: boolean("active").notNull().default(true),
+    /** EmployeeProfile: name, pay, W-4/HW-4 elections, payment details. */
+    profileEnc: text("profile_enc").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("employees_id_org").on(t.id, t.orgId), index("employees_org_idx").on(t.orgId)],
+);
+
+const employeeChild = <T extends { employeeId: any; orgId: any }>(t: T, name: string) =>
+  foreignKey({ name, columns: [t.employeeId, t.orgId], foreignColumns: [employees.id, employees.orgId] });
+
+/** Planned work: the schedule. */
+export const shifts = pgTable(
+  "shifts",
+  {
+    id: id(),
+    orgId: uuid("org_id").notNull(),
+    employeeId: uuid("employee_id").notNull(),
+    date: text("date").notNull(),
+    /** HH:MM, local to the organization. A shift ending before it starts runs past midnight. */
+    startTime: text("start_time").notNull(),
+    endTime: text("end_time").notNull(),
+    breakMinutes: integer("break_minutes").notNull().default(0),
+    note: text("note"),
+    createdAt: createdAt(),
+  },
+  (t) => [employeeChild(t, "shifts_employee_fk"), index("shifts_org_date_idx").on(t.orgId, t.date)],
+);
+
+/** Work done: the timesheet. One row per employee per day. */
+export const timeEntries = pgTable(
+  "time_entries",
+  {
+    id: id(),
+    orgId: uuid("org_id").notNull(),
+    employeeId: uuid("employee_id").notNull(),
+    date: text("date").notNull(),
+    minutes: integer("minutes").notNull(),
+    note: text("note"),
+    source: text("source", { enum: ["manual", "schedule"] }).notNull().default("manual"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [employeeChild(t, "time_entries_employee_fk"), unique("time_entries_employee_date").on(t.employeeId, t.date), index("time_entries_org_date_idx").on(t.orgId, t.date)],
 );
 
 /** Append-only audit trail, including every staff read of client data. */

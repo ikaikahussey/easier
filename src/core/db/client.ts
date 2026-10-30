@@ -6,7 +6,12 @@ import * as schema from "./schema";
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-let instance: Promise<Db> | undefined;
+/**
+ * One connection per process. Next.js bundles route handlers and pages separately, so a
+ * module-level variable would open the embedded Postgres twice (two instances of PGlite on
+ * one directory see different data); the instance lives on globalThis instead.
+ */
+const g = globalThis as typeof globalThis & { __easierDb?: Promise<Db> };
 
 async function connect(): Promise<Db> {
   const url = process.env.DATABASE_URL;
@@ -27,13 +32,13 @@ async function connect(): Promise<Db> {
 }
 
 export function getDb(): Promise<Db> {
-  instance ??= connect();
-  return instance;
+  g.__easierDb ??= connect();
+  return g.__easierDb;
 }
 
 /** Tests inject an isolated database. */
 export function setDb(db: Db | undefined) {
-  instance = db ? Promise.resolve(db) : undefined;
+  g.__easierDb = db ? Promise.resolve(db) : undefined;
 }
 
 export interface Principal {

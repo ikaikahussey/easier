@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { acceptConsentsAction, transitionAction, uploadDocumentAction } from "@/app/actions";
+import { acceptConsentsAction, prepareDocumentsAction, transitionAction, uploadDocumentAction } from "@/app/actions";
 import { getEngagement } from "@/core/services/engagements";
 import { NotFoundError } from "@/core/services/context";
 import { getProduct } from "@/products";
@@ -14,12 +14,12 @@ export default async function EngagementPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; prepared?: string }>;
 }) {
   const actor = await requireActor();
   const { id } = await params;
   if (actor.role !== "client") redirect(`/review/${id}`);
-  const { error } = await searchParams;
+  const { error, prepared } = await searchParams;
   const e = await getEngagement(actor, id).catch((err) => (err instanceof NotFoundError ? notFound() : Promise.reject(err)));
   const product = getProduct(e.product);
   const editable = e.status === "awaiting_documents" || e.status === "changes_requested";
@@ -27,6 +27,7 @@ export default async function EngagementPage({
   const pendingConsents = e.consents.filter((c) => !c.accepted);
   const preparerReady = !!configuredPreparer();
   const documentsReady = product.documents.every((k) => !k.required || e.documents.some((d) => d.kind === k.kind));
+  const generated = product.documents.some((k) => k.generated);
 
   return (
     <Shell actor={actor}>
@@ -39,7 +40,7 @@ export default async function EngagementPage({
         </h1>
         <StatusBadge status={e.status} label={e.statusLabel} />
       </div>
-      <Notice error={error} />
+      <Notice error={error} success={prepared ? `Prepared from your records: ${prepared}.` : undefined} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -123,6 +124,18 @@ export default async function EngagementPage({
 
           {editable && (
             <Card title="Documents">
+              {generated && (
+                <form action={prepareDocumentsAction} className="mb-4 border-b border-line pb-4">
+                  <input type="hidden" name="engagementId" value={e.id} />
+                  <input type="hidden" name="product" value={product.slug} />
+                  <p className="mb-2 text-sm">
+                    Write the files below from your{" "}
+                    <Link href={`/app/orgs/${e.orgId}/payroll`}>employee records and timesheet</Link>. You can prepare again after
+                    changing hours.
+                  </p>
+                  <Button type="submit">Prepare from my records</Button>
+                </form>
+              )}
               {product.documents.map((kind) => {
                 const latest = e.documents.find((d) => d.kind === kind.kind);
                 return (
@@ -135,7 +148,7 @@ export default async function EngagementPage({
                     <p className="text-xs text-muted">{kind.help}</p>
                     {latest && (
                       <p className="text-xs">
-                        Uploaded: {latest.filename} ({Math.ceil(latest.size / 1024)} KB)
+                        On file: {latest.filename} ({Math.ceil(latest.size / 1024)} KB)
                       </p>
                     )}
                     <div className="flex flex-wrap items-center gap-3">
@@ -183,7 +196,7 @@ export default async function EngagementPage({
             </Card>
           )}
           {SIGNED.includes(e.status) && (
-            <Card title="Your return">
+            <Card title={product.filedWithIrs ? "Your return" : "Your approved work"}>
               <Link href={`/engagements/${e.id}/package`} className="text-sm">
                 Open the signed review package
               </Link>

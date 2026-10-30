@@ -2,7 +2,7 @@
 
 Firm-grade professional services at plain prices. AI prepares the work, a licensed professional reviews and signs it, and the client pays a published flat fee.
 
-The first products are **Form 990 preparation** (Easier Tax) and **monthly nonprofit close** (Easier Books, formerly Augmented Accountants).
+The first products are **Form 990 preparation** (Easier Tax), **monthly nonprofit close** (Easier Books, formerly Augmented Accountants), and **pay runs** (Easier Payroll).
 
 ## Business model
 
@@ -29,7 +29,8 @@ src/core/            product-agnostic platform
   db/                Drizzle schema + client, tenant/system transaction scopes
   services/          organizations, engagements, auth (the only path from UI to data)
 src/domains/nonprofit  990-keyed line catalog shared by Books and Form 990
-src/products/        form-990, books, and the registry (index.ts)
+src/domains/payroll    tax tables by year, withholding, gross-to-net, journal entries, roster/timesheet CSV
+src/products/        form-990, books, payroll, and the registry (index.ts)
   form-990/parts/      core-form parts: heading, IV (checklist), V, VI, VII, XI–XII
   form-990/schedules/  one module per IRS schedule (A, B, C, D, E, F, G, I, J, L, M, N, R): intake, computation, rules, worksheet
   form-990/export.ts   the approved return as line-numbered JSON (with Form 8879-TE values)
@@ -64,6 +65,8 @@ What the November 2026 pilot needs to run real engagements:
 - **E-filing record.** Products with `filedWithIrs` continue past delivery: record the 20-character MeF submission ID (filed), then IRS acceptance or rejection with its date. A rejected return can be refiled or reopened.
 - **Invoices.** Admins record the invoice amount, issue date, paid date, and reference per engagement at `/admin`. No payment processor yet.
 - **Labor Pledge accrual.** `/admin` totals the pledge on signed work until a recipient fund is chosen.
+
+**Easier Payroll.** Employees, the work schedule (shifts), and the timesheet (hours per employee per day) live at the organization level (`src/core/services/payroll.ts`, pages under `/app/orgs/{orgId}/payroll`). Each pay run is an engagement of the `payroll` product whose period is the last day of the pay period. "Prepare from my records" writes two documents from those records, a roster CSV (pay, W-4 and HW-4 elections, payment details, year-to-date wages from prior approved runs) and a timesheet CSV, so the run is reproducible from what the reviewer saw; either can also be uploaded from another system. The build computes, per employee: regular and overtime hours (over 40 in the workweek), gross, federal withholding (Pub 15-T Worksheet 1A, percentage method), Hawaii withholding (Booklet A annualized method), Social Security and Medicare with the wage base and Additional Medicare, the employee TDI share with its weekly cap, and employer taxes (FICA match, FUTA unless exempt, Hawaii UI at the employer's rate, E&T). Tax parameters are keyed by year in `src/domains/payroll/tax-tables.ts` with their sources; a pay date in a year with no tables is a blocking finding. The approved run exports payment instructions, pay stubs, tax deposit amounts, and two balanced journal entries (accrual at period end, payment on pay date) posted to a small payroll chart mapped to Form 990 lines, the hand-off to the future Easier Books ledger (`src/core/ledger/journal.ts`). Not yet built: tax deposits and filings (941, 940, HW-14, UC-B6), direct deposit transmission (NACHA), pre-tax deductions and benefits, tip credit, multiple pay rates, and states other than Hawaii.
 
 **Classification pipeline:** reviewer override → keyword rule → AI (validated against the account type) → catch-all line flagged for review. AI outputs are cached per draft by input hash, so reviewer edits do not trigger new model calls unless an AI input changed. Without `ANTHROPIC_API_KEY`, deterministic fallbacks run and unmatched accounts are routed to the reviewer.
 
@@ -103,6 +106,7 @@ npm run check      # typecheck → unit/integration tests → production build �
 
 - `tests/core.test.ts`, `tests/products.test.ts`: parsing, classification, deadlines, rules, form selection, schedules, allocation, pledge.
 - `tests/schedules.test.ts`: each schedule's computation against figures worked by hand from the fixtures.
+- `tests/payroll.test.ts`, `tests/payroll-services.test.ts`: withholding and FICA against hand-worked Pub 15-T and Booklet A examples, overtime, journal balance, CSV round-trips, employee/schedule/timesheet services with tenant isolation, and pay runs with year-to-date carry-over.
 - `tests/core-form.test.ts`: form selection by age, Part IV answers, Part VII, Part XI reconciliation, Parts V–VI, Schedules E, N, C averaging, R Part V, D Parts VII–X, and the export.
 - `tests/services.test.ts`: full lifecycle plus tenant isolation against real Postgres (PGlite) with RLS, and pilot operations (consents, credentials, review time, e-filing record, invoices, metrics).
 - `scripts/e2e.mjs`: drives the production build through plain HTML forms (no JavaScript) for sign-in, intake, upload, engagement terms, AI draft, reviewer claim, reclassify, credential verification, approve, e-filing record, keying sheet, and invoice, plus cross-tenant 404s.
