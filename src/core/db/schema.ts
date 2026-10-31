@@ -59,6 +59,8 @@ export const users = pgTable("users", {
   /** scrypt hash of the sign-in password; null until the user sets one. System access only. */
   passwordHash: text("password_hash"),
   passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
+  /** Set when the user first follows an emailed link; null for a self-registered account that has not yet. */
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 

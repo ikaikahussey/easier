@@ -9,8 +9,10 @@ import {
   joinWaitlist,
   loginWithPassword,
   requestLogin,
+  requestVerification,
   sendLoginLink,
   setPassword,
+  signUp,
   type WaitlistKind,
 } from "@/core/services/auth";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/core/services/context";
@@ -65,13 +67,43 @@ export async function requestLoginAction(fd: FormData) {
     const email = str(fd, "email");
     const token = await requestLogin(email);
     if (!token) return "/login?sent=1"; // Same response either way: no hint about who has access.
-    const host =
-      process.env.VERCEL_ENV === "production"
-        ? process.env.VERCEL_PROJECT_PRODUCTION_URL
-        : process.env.VERCEL_BRANCH_URL || process.env.VERCEL_URL;
-    const base = process.env.APP_URL || (host ? `https://${host}` : "http://localhost:3000");
-    await sendLoginLink(email.trim().toLowerCase(), `${base}/auth/verify?token=${encodeURIComponent(token)}`);
+    await sendLoginLink(email.trim().toLowerCase(), linkUrl(token));
     return "/login?sent=1";
+  });
+}
+
+function linkUrl(token: string): string {
+  const host =
+    process.env.VERCEL_ENV === "production"
+      ? process.env.VERCEL_PROJECT_PRODUCTION_URL
+      : process.env.VERCEL_BRANCH_URL || process.env.VERCEL_URL;
+  const base = process.env.APP_URL || (host ? `https://${host}` : "http://localhost:3000");
+  return `${base}/auth/verify?token=${encodeURIComponent(token)}`;
+}
+
+const home = (role: string) => (role === "client" ? "/app" : "/review");
+
+export async function signUpAction(fd: FormData) {
+  let result;
+  try {
+    const password = str(fd, "password");
+    if (password !== str(fd, "confirm")) throw new ValidationError(["Passwords do not match"]);
+    result = await signUp(str(fd, "email"), password, str(fd, "name"));
+  } catch (err) {
+    redirect(`/signup?error=${encodeURIComponent(message(err))}`);
+  }
+  if (!result) redirect("/signup?pending=1"); // Existing account or no access yet: same response.
+  await startSession(result.actor.id);
+  await sendLoginLink(result.actor.email, linkUrl(result.token), "verify");
+  redirect(`${home(result.actor.role)}?welcome=1`);
+}
+
+export async function resendVerificationAction() {
+  const actor = await requireActor();
+  await attempt(home(actor.role), async () => {
+    const v = await requestVerification(actor.id);
+    if (v) await sendLoginLink(v.email, linkUrl(v.token), "verify");
+    return `${home(actor.role)}?verification_sent=1`;
   });
 }
 
@@ -86,10 +118,10 @@ export async function joinWaitlistAction(fd: FormData) {
 export async function verifyLoginAction(fd: FormData) {
   const actor = await consumeLogin(str(fd, "token"));
   if (!actor) redirect("/login?error=" + encodeURIComponent("That link is invalid or expired. Request a new one."));
-  await startSession(actor.id);
+  await startSession(actor.id, { viaLink: true });
   // An emailed link is how a password is first set or reset, so send the user there when they have none.
   if (!(await hasPassword(actor.id))) redirect("/account/password?setup=1");
-  redirect(actor.role === "client" ? "/app" : "/review");
+  redirect(`${home(actor.role)}?verified=1`);
 }
 
 export async function passwordLoginAction(fd: FormData) {
@@ -109,7 +141,7 @@ export async function setPasswordAction(fd: FormData) {
   await attempt("/account/password", async () => {
     const password = str(fd, "password");
     if (password !== str(fd, "confirm")) throw new ValidationError(["Passwords do not match"]);
-    await setPassword(actor.id, password, str(fd, "current") || undefined);
+    await setPassword(actor.id, password, str(fd, "current") || undefined, { viaLink: actor.viaLink });
     return "/account/password?saved=1";
   });
 }

@@ -12,6 +12,10 @@ export interface Actor {
   id: string;
   email: string;
   role: Role;
+  /** False for a self-registered account that has not yet followed an emailed link. */
+  emailVerified?: boolean;
+  /** True when this session began with an emailed link, which proves control of the address. */
+  viaLink?: boolean;
 }
 
 export const isStaff = (a: Actor) => a.role === "reviewer" || a.role === "admin";

@@ -11,11 +11,12 @@ export default async function Password({
   const actor = await requireActor();
   const { error, saved, setup } = await searchParams;
   const existing = await hasPassword(actor.id);
+  const needCurrent = existing && !actor.viaLink;
   const home = actor.role === "client" ? "/app" : "/review";
   return (
     <Shell actor={actor}>
       <div className="mx-auto max-w-md">
-        <PageTitle kicker={actor.email}>{existing ? "Change password" : "Set a password"}</PageTitle>
+        <PageTitle kicker={actor.email}>{existing ? (needCurrent ? "Change password" : "Reset password") : "Set a password"}</PageTitle>
         <Notice
           error={error}
           success={saved ? "Password saved. Next time, sign in with your email and password." : undefined}
@@ -28,7 +29,7 @@ export default async function Password({
         )}
         <Card>
           <form action={setPasswordAction} className="space-y-4">
-            {existing && (
+            {needCurrent && (
               <label className="block">
                 <span className="mb-1 block text-sm font-bold">Current password</span>
                 <input name="current" type="password" required autoComplete="current-password" className={inputClass} />
@@ -53,9 +54,11 @@ export default async function Password({
             <Button type="submit">Save password</Button>
           </form>
         </Card>
-        <p className="mt-4 text-sm text-muted">
-          Forgot your password? Sign out and request an emailed sign-in link; it brings you back here to set a new one.
-        </p>
+        {needCurrent && (
+          <p className="mt-4 text-sm text-muted">
+            Forgot your password? Sign out and request an emailed sign-in link; it brings you back here to set a new one.
+          </p>
+        )}
       </div>
     </Shell>
   );
