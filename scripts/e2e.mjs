@@ -32,7 +32,7 @@ const server = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", 
     REVIEWER_EMAILS: "rita@easier.company",
     ADMIN_EMAILS: "ada@easier.company",
     PREPARER_OF_RECORD: "Rita Reyes, EA",
-    ACCESS_EMAILS: "alice@a.org,bob@b.org,pw@a.org",
+    ACCESS_EMAILS: "alice@a.org,bob@b.org,pw@a.org,signup@a.org",
     SITE_ACCESS: "",
     SESSION_SECRET: "e2e-session-secret-0123456789abcdefghij",
     DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
@@ -192,16 +192,55 @@ async function main() {
     assert.match(text(tooShort), /at least 12/);
     const saved = await first.submit(page, (f) => !!f.querySelector("input[name=confirm]"), { password: "a strong passphrase", confirm: "a strong passphrase" });
     assert.match(text(saved), /Password saved/);
-    assert.match(text(await first.get("/account/password")), /Change password/);
+    assert.match(text(await first.get("/account/password")), /Reset password/); // this session came from a link
     const second = new Browser();
     const wrong = await second.submit(await second.get("/login"), passwordForm, { email: "pw@a.org", password: "not the passphrase" });
     assert.match(text(wrong), /Email or password is incorrect/);
     const right = await second.submit(await second.get("/login"), passwordForm, { email: "PW@a.org", password: "a strong passphrase" });
     assert.match(right.url, /\/app$/);
     assert.ok(second.cookie.startsWith("ec_session="), "password sign-in set no session");
-    // The emailed link still works for the same account and goes straight home (password already set).
-    const { landing: again } = await signIn("pw@a.org");
-    assert.match(again.url, /\/app$/);
+    assert.match(text(await second.get("/account/password")), /Change password/); // password session: current required
+    // The emailed link still works for the same account and goes straight home (password already set),
+    // and because it proved control of the address it allows a reset without the current password.
+    const { b: third, landing: again } = await signIn("pw@a.org");
+    assert.match(again.url, /\/app\?verified=1$/);
+    const resetPage = await third.get("/account/password");
+    assert.match(text(resetPage), /Reset password/);
+    assert.ok(!resetPage.doc.querySelector("input[name=current]"), "reset asked for the current password");
+    const reset = await third.submit(resetPage, (f) => !!f.querySelector("input[name=confirm]"), { password: "a replacement passphrase", confirm: "a replacement passphrase" });
+    assert.match(text(reset), /Password saved/);
+    const fourth = new Browser();
+    assert.match((await fourth.submit(await fourth.get("/login"), passwordForm, { email: "pw@a.org", password: "a replacement passphrase" })).url, /\/app$/);
+  }
+
+  // Sign-up: email and password create the account and sign in; the emailed link confirms the address.
+  {
+    const signupForm = (f) => !!f.querySelector("input[name=name]") && !!f.querySelector("input[name=confirm]");
+    const nb = new Browser();
+    const page = await nb.get("/signup");
+    const mismatch = await nb.submit(page, signupForm, { name: "Sam", email: "signup@a.org", password: "a signup passphrase", confirm: "nope" });
+    assert.match(text(mismatch), /Passwords do not match/);
+    // Uninvited: generic message, no session.
+    const uninvited = await nb.submit(page, signupForm, { name: "X", email: "uninvited@a.org", password: "a signup passphrase", confirm: "a signup passphrase" });
+    assert.match(text(uninvited), /could not create an account/);
+    assert.ok(!nb.cookie.startsWith("ec_session="), "uninvited sign-up got a session");
+    const before = log.length;
+    const created = await nb.submit(page, signupForm, { name: "Sam Signup", email: "Signup@A.org", password: "a signup passphrase", confirm: "a signup passphrase" });
+    assert.match(created.url, /\/app\?welcome=1$/);
+    assert.match(text(created), /Your account is ready/);
+    assert.match(text(created), /Confirm your email/);
+    await sleep(200);
+    const link = log.slice(before).match(/Sign-in link for signup@a\.org: (\S+)/)?.[1];
+    assert.ok(link, "verification link was not logged");
+    // Duplicate sign-up is refused generically; the password still works.
+    const dup = await new Browser().submit(await new Browser().get("/signup"), signupForm, { name: "Z", email: "signup@a.org", password: "another passphrase!", confirm: "another passphrase!" });
+    assert.match(text(dup), /could not create an account/);
+    const again = new Browser();
+    assert.match((await again.submit(await again.get("/login"), passwordForm, { email: "signup@a.org", password: "a signup passphrase" })).url, /\/app$/);
+    // Following the link confirms the address and clears the banner.
+    const verified = await again.submit(await again.get(link), (f) => !!f.querySelector("input[name=token]"));
+    assert.match(text(verified), /Email confirmed/);
+    assert.doesNotMatch(text(await again.get("/app")), /Confirm your email/);
   }
 
   // Client A: organization, intake, upload, submit

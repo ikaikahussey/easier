@@ -15,7 +15,18 @@ import {
   uploadDocument,
 } from "@/core/services/engagements";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/core/services/context";
-import { consumeLogin, createSessionToken, hasPassword, joinWaitlist, loginWithPassword, readSessionToken, requestLogin, setPassword } from "@/core/services/auth";
+import {
+  consumeLogin,
+  createSessionToken,
+  hasPassword,
+  joinWaitlist,
+  loginWithPassword,
+  readSessionToken,
+  requestLogin,
+  requestVerification,
+  setPassword,
+  signUp,
+} from "@/core/services/auth";
 import { addReviewTime, pilotMetrics, recordInvoice, startReviewTimer, stopReviewTimer } from "@/core/services/operations";
 import { getReviewerProfile, listReviewers, setCredentialVerified, submitCredential } from "@/core/services/reviewers";
 import { OrgVault, unwrapKey } from "@/core/crypto";
@@ -498,6 +509,41 @@ describe("authentication", () => {
     expect(await consumeLogin((await requestLogin("alice@a.org"))!)).toMatchObject({ id: alice.id });
   });
 
+  it("registers an account with email and password, verified by the emailed link", async () => {
+    delete process.env.SITE_ACCESS;
+    process.env.ACCESS_EMAILS = "new.client@x.org";
+    await expect(signUp("new.client@x.org", "short")).rejects.toThrow(/at least 12/);
+    // No access: no account, generic result, waitlisted.
+    expect(await signUp("uninvited@x.org", "a perfectly fine password")).toBeUndefined();
+    expect(await loginWithPassword("uninvited@x.org", "a perfectly fine password")).toBeUndefined();
+    const wl = await withSystem((tx) => tx.select().from(schema.waitlist).where(eq(schema.waitlist.email, "uninvited@x.org")));
+    expect(wl).toHaveLength(1);
+    // Invited: account created, signed in, unverified until the link is used.
+    const reg = (await signUp(" New.Client@X.org ", "a perfectly fine password", "  Pat Client  "))!;
+    expect(reg.actor).toMatchObject({ email: "new.client@x.org", role: "client", emailVerified: false });
+    expect(await loginWithPassword("new.client@x.org", "a perfectly fine password")).toMatchObject({ id: reg.actor.id, emailVerified: false });
+    const [row] = await withSystem((tx) => tx.select().from(schema.users).where(eq(schema.users.id, reg.actor.id)));
+    expect(row!.name).toBe("Pat Client");
+    expect(row!.emailVerifiedAt).toBeNull();
+    // Duplicate registration: refused generically, existing password untouched.
+    expect(await signUp("new.client@x.org", "another password entirely")).toBeUndefined();
+    expect(await loginWithPassword("new.client@x.org", "another password entirely")).toBeUndefined();
+    // The verification link signs in and marks the address verified.
+    expect(await consumeLogin(reg.token)).toMatchObject({ id: reg.actor.id, emailVerified: true });
+    expect(await requestVerification(reg.actor.id)).toBeUndefined(); // already verified
+    // A staff email registering gets its configured role.
+    process.env.REVIEWER_EMAILS = "signup.reviewer@easier.company";
+    expect((await signUp("signup.reviewer@easier.company", "reviewer password here"))!.actor.role).toBe("reviewer");
+  });
+
+  it("lets a session that began with an emailed link reset the password without the current one", async () => {
+    const dana = await makeUser(db, "dana@d.org");
+    await setPassword(dana.id, "danas first password");
+    await expect(setPassword(dana.id, "danas second password")).rejects.toThrow(/Current password/);
+    await setPassword(dana.id, "danas second password", undefined, { viaLink: true });
+    expect(await loginWithPassword("dana@d.org", "danas second password")).toBeTruthy();
+  });
+
   it("locks password sign-in after repeated failures", async () => {
     await setPassword(bob.id, "bobs long password!");
     for (let i = 0; i < 8; i++) expect(await loginWithPassword("bob@b.org", "wrong attempt " + i)).toBeUndefined();
@@ -511,7 +557,8 @@ describe("authentication", () => {
 
   it("rejects tampered or expired sessions", () => {
     const t = createSessionToken("user-1", 0);
-    expect(readSessionToken(t, 1000)).toBe("user-1");
+    expect(readSessionToken(t, 1000)).toEqual({ uid: "user-1", viaLink: false });
+    expect(readSessionToken(createSessionToken("user-1", 0, { viaLink: true }), 1000)).toEqual({ uid: "user-1", viaLink: true });
     expect(readSessionToken(t, 13 * 3600 * 1000)).toBeUndefined();
     const [body, mac] = t.split(".");
     const forged = Buffer.from(JSON.stringify({ uid: "admin", exp: 9e15 })).toString("base64url");

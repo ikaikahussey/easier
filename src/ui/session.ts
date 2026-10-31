@@ -7,8 +7,10 @@ import { isStaff, type Actor } from "@/core/services/context";
 const COOKIE = "ec_session";
 
 export async function currentActor(): Promise<Actor | undefined> {
-  const uid = readSessionToken((await cookies()).get(COOKIE)?.value);
-  return uid ? getActor(uid) : undefined;
+  const session = readSessionToken((await cookies()).get(COOKIE)?.value);
+  if (!session) return undefined;
+  const actor = await getActor(session.uid);
+  return actor ? { ...actor, viaLink: session.viaLink } : undefined;
 }
 
 export async function requireActor(): Promise<Actor> {
@@ -29,8 +31,8 @@ export async function requireAdmin(): Promise<Actor> {
   return a;
 }
 
-export async function startSession(userId: string) {
-  (await cookies()).set(COOKIE, createSessionToken(userId), {
+export async function startSession(userId: string, opts: { viaLink?: boolean } = {}) {
+  (await cookies()).set(COOKIE, createSessionToken(userId, Date.now(), opts), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

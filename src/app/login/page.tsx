@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { passwordLoginAction, requestLoginAction } from "@/app/actions";
 import { Button, Card, Notice, PageTitle, Shell, inputClass } from "@/ui/components";
 
@@ -23,10 +24,13 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
             </label>
             <Button type="submit">Sign in</Button>
           </form>
+          <p className="mt-4 text-sm text-muted">
+            New here? <Link href="/signup">Create an account</Link>.
+          </p>
         </Card>
-        <Card title="No password yet, or forgot it?">
+        <Card title="Forgot your password?">
           <p className="mb-4 text-sm text-muted">
-            We will email you a single-use sign-in link. First-time users and anyone resetting a password sign in this way, then set a password.
+            We will email you a single-use sign-in link. It signs you in and lets you set a new password.
           </p>
           <form action={requestLoginAction} className="space-y-4">
             <label className="block">

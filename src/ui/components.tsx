@@ -8,7 +8,7 @@ import type { Finding } from "@/core/rules";
 import type { Status } from "@/core/workflow";
 import type { Filing } from "@/core/db/schema";
 import type { Actor } from "@/core/services/context";
-import { logoutAction } from "@/app/actions";
+import { logoutAction, resendVerificationAction } from "@/app/actions";
 
 /**
  * Page frame: a header and optional hero on the theme background, content on a sheet.
@@ -58,7 +58,19 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
         </nav>
       </header>
       {hero}
-      <main className="sheet mx-auto max-w-6xl px-4 py-8 sm:px-8">{children}</main>
+      <main className="sheet mx-auto max-w-6xl px-4 py-8 sm:px-8">
+        {actor && actor.emailVerified === false && (
+          <div role="status" className="mb-6 flex flex-wrap items-center justify-between gap-3 border-l-8 border-ok bg-accent-soft px-4 py-3 text-sm">
+            <span>
+              <b>Confirm your email.</b> We sent a link to {actor.email}. Following it confirms this address and keeps account recovery working.
+            </span>
+            <form action={resendVerificationAction}>
+              <button className={buttonClass("quiet")}>Resend link</button>
+            </form>
+          </div>
+        )}
+        {children}
+      </main>
       {actor && (
         <footer className="no-print mx-auto flex max-w-6xl flex-wrap gap-x-6 gap-y-2 px-4 py-6">
           <Link href="/" className="nav-link">

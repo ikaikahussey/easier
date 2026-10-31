@@ -8,15 +8,26 @@ import { PRODUCTS } from "@/products";
 import { Button, buttonClass, Card, Notice, Shell, StatusBadge, inputClass } from "@/ui/components";
 import { requireActor } from "@/ui/session";
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+export default async function Dashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; welcome?: string; verified?: string; verification_sent?: string }>;
+}) {
   const actor = await requireActor();
   if (actor.role !== "client") redirect("/review");
-  const { error } = await searchParams;
+  const { error, welcome, verified, verification_sent } = await searchParams;
+  const success = welcome
+    ? "Your account is ready. Add your organization below to get started."
+    : verified
+      ? "Email confirmed."
+      : verification_sent
+        ? "Confirmation link sent. It expires in 15 minutes."
+        : undefined;
   const [orgs, engagements] = await Promise.all([listOrganizations(actor), listEngagements(actor)]);
 
   return (
     <Shell actor={actor}>
-      <Notice error={error} />
+      <Notice error={error} success={success} />
       <h1 className="mb-6 text-3xl font-semibold">Your organizations</h1>
 
       {orgs.map((org) => (
