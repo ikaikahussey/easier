@@ -32,7 +32,7 @@ const server = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", 
     REVIEWER_EMAILS: "rita@easier.company",
     ADMIN_EMAILS: "ada@easier.company",
     PREPARER_OF_RECORD: "Rita Reyes, EA",
-    ACCESS_EMAILS: "alice@a.org,bob@b.org",
+    ACCESS_EMAILS: "alice@a.org,bob@b.org,pw@a.org",
     SITE_ACCESS: "",
     SESSION_SECRET: "e2e-session-secret-0123456789abcdefghij",
     DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
@@ -109,18 +109,29 @@ class Browser {
   }
 }
 
+/** The emailed-link form on /login: has an email field and no password field. */
+const linkForm = (f) => !!f.querySelector("input[name=email]") && !f.querySelector("input[name=password]");
+const passwordForm = (f) => !!f.querySelector("input[name=password]") && !f.querySelector("input[name=confirm]");
+
+/** First sign-in goes through the emailed link; a user with no password lands on the set-password page. */
 async function signIn(email) {
   const b = new Browser();
   const login = await b.get("/login");
   const before = log.length;
-  const sent = await b.submit(login, (f) => !!f.querySelector("input[name=email]"), { email });
+  const sent = await b.submit(login, linkForm, { email });
   assert.match(sent.html, /sign-in link is on its way/);
   await sleep(200);
   const link = log.slice(before).match(/Sign-in link for \S+: (\S+)/)?.[1];
   assert.ok(link, "sign-in link was not logged");
   const verify = await b.get(link);
-  const after = await b.submit(verify, (f) => !!f.querySelector("input[name=token]"));
+  let after = await b.submit(verify, (f) => !!f.querySelector("input[name=token]"));
   assert.ok(b.cookie.startsWith("ec_session="), "no session cookie");
+  if (/\/account\/password\?setup=1$/.test(after.url)) {
+    // No password yet: skip past setup to the home page, as a user keeping emailed links would.
+    const home = after.doc.querySelector("a[href='/app'], a[href='/review']")?.getAttribute("href");
+    assert.ok(home, "setup page has no skip link");
+    after = await b.get(home);
+  }
   return { b, landing: after };
 }
 
@@ -160,10 +171,38 @@ async function main() {
   // Uninvited sign-in: same message, no link issued.
   const stranger = new Browser();
   const before = log.length;
-  const strangerSent = await stranger.submit(await stranger.get("/login"), (f) => !!f.querySelector("input[name=email]"), { email: "stranger@x.org" });
+  const strangerSent = await stranger.submit(await stranger.get("/login"), linkForm, { email: "stranger@x.org" });
   assert.match(strangerSent.html, /sign-in link is on its way/);
   await sleep(200);
   assert.doesNotMatch(log.slice(before), /Sign-in link for stranger@x\.org/);
+  // Password sign-in with no account, or wrong password, gives one generic message.
+  const strangerPw = await stranger.submit(await stranger.get("/login"), passwordForm, { email: "stranger@x.org", password: "whatever-this-is-12" });
+  assert.match(text(strangerPw), /Email or password is incorrect/);
+  assert.ok(!stranger.cookie.startsWith("ec_session="), "stranger got a session");
+
+  // Password: set after the first emailed-link sign-in, then used for the next sign-in.
+  {
+    const { b: first, landing: setup } = await signIn("pw@a.org");
+    assert.match(setup.url, /\/app$/);
+    const page = await first.get("/account/password");
+    assert.match(text(page), /Set a password/);
+    const mismatch = await first.submit(page, (f) => !!f.querySelector("input[name=confirm]"), { password: "a strong passphrase", confirm: "different passphrase" });
+    assert.match(text(mismatch), /Passwords do not match/);
+    const tooShort = await first.submit(page, (f) => !!f.querySelector("input[name=confirm]"), { password: "short", confirm: "short" });
+    assert.match(text(tooShort), /at least 12/);
+    const saved = await first.submit(page, (f) => !!f.querySelector("input[name=confirm]"), { password: "a strong passphrase", confirm: "a strong passphrase" });
+    assert.match(text(saved), /Password saved/);
+    assert.match(text(await first.get("/account/password")), /Change password/);
+    const second = new Browser();
+    const wrong = await second.submit(await second.get("/login"), passwordForm, { email: "pw@a.org", password: "not the passphrase" });
+    assert.match(text(wrong), /Email or password is incorrect/);
+    const right = await second.submit(await second.get("/login"), passwordForm, { email: "PW@a.org", password: "a strong passphrase" });
+    assert.match(right.url, /\/app$/);
+    assert.ok(second.cookie.startsWith("ec_session="), "password sign-in set no session");
+    // The emailed link still works for the same account and goes straight home (password already set).
+    const { landing: again } = await signIn("pw@a.org");
+    assert.match(again.url, /\/app$/);
+  }
 
   // Client A: organization, intake, upload, submit
   const { b: alice, landing } = await signIn("alice@a.org");

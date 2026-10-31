@@ -41,6 +41,9 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
                   Pilot admin
                 </Link>
               )}
+              <Link href="/account/password" className="nav-link">
+                Password
+              </Link>
               <form action={logoutAction}>
                 <button className="nav-link cursor-pointer" title={`Signed in as ${actor.email}`}>
                   Sign out

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  boolean,
   foreignKey,
   index,
   integer,
@@ -55,6 +56,9 @@ export const users = pgTable("users", {
   /** Set by an admin after checking the credential against the issuing body. Cleared when the credential changes. */
   credentialVerifiedAt: timestamp("credential_verified_at", { withTimezone: true }),
   credentialVerifiedBy: uuid("credential_verified_by").references((): AnyPgColumn => users.id),
+  /** scrypt hash of the sign-in password; null until the user sets one. System access only. */
+  passwordHash: text("password_hash"),
+  passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -63,6 +67,14 @@ export const loginTokens = pgTable("login_tokens", {
   email: text("email").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** Password sign-in attempts, for lockout. System access only. */
+export const loginAttempts = pgTable("login_attempts", {
+  id: id(),
+  email: text("email").notNull(),
+  succeeded: boolean("succeeded").notNull().default(false),
   createdAt: createdAt(),
 });
 
