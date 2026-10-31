@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 /**
  * Envelope encryption. Each organization has its own 256-bit data key, stored only
@@ -93,3 +93,28 @@ export function verify(token: string, secret: string): string | undefined {
 }
 
 export const randomToken = () => randomBytes(32).toString("base64url");
+
+/**
+ * Password hashing with scrypt (N=2^15, r=8, p=1, 32-byte key). Stored as
+ * `scrypt$<N>$<salt>$<hash>` so the cost can be raised later without invalidating old hashes.
+ */
+const SCRYPT_N = 2 ** 15;
+const SCRYPT_PARAMS = { N: SCRYPT_N, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  const hash = scryptSync(password.normalize("NFKC"), salt, 32, SCRYPT_PARAMS);
+  return `scrypt$${SCRYPT_N}$${salt.toString("base64url")}$${hash.toString("base64url")}`;
+}
+
+export function verifyPassword(password: string, stored: string | null | undefined): boolean {
+  const [scheme, n, salt, hash] = (stored ?? "").split("$");
+  if (scheme !== "scrypt" || !n || !salt || !hash) {
+    // Spend comparable time when there is nothing to compare, so a missing account is not detectable by timing.
+    scryptSync(password.normalize("NFKC"), randomBytes(16), 32, SCRYPT_PARAMS);
+    return false;
+  }
+  const expected = Buffer.from(hash, "base64url");
+  const given = scryptSync(password.normalize("NFKC"), Buffer.from(salt, "base64url"), expected.length, { ...SCRYPT_PARAMS, N: Number(n) });
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}

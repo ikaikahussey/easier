@@ -1,12 +1,17 @@
 import { and, count, eq, gt, isNull } from "drizzle-orm";
-import { randomToken, sha256, sign, verify } from "../crypto";
+import { hashPassword, randomToken, sha256, sign, verify, verifyPassword } from "../crypto";
 import { withSystem } from "../db/client";
-import { loginTokens, users, waitlist } from "../db/schema";
+import { loginAttempts, loginTokens, users, waitlist } from "../db/schema";
 import type { Role } from "../workflow";
 import { ValidationError, type Actor } from "./context";
 
 const TOKEN_TTL_MS = 15 * 60 * 1000;
 const MAX_TOKENS_PER_HOUR = 5;
+/** Password sign-in locks for LOCKOUT_WINDOW_MS after MAX_FAILED_ATTEMPTS failures on an email. */
+const MAX_FAILED_ATTEMPTS = 8;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+export const MIN_PASSWORD_LENGTH = 12;
+const MAX_PASSWORD_LENGTH = 200;
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 const emailList = (v: string | undefined) =>
@@ -80,6 +85,63 @@ export async function consumeLogin(token: string): Promise<Actor | undefined> {
     }
     const [created] = await tx.insert(users).values({ email: row.email, role: role ?? "client" }).returning();
     return { id: created!.id, email: created!.email, role: created!.role as Role };
+  });
+}
+
+// ── Password sign-in ─────────────────────────────────────────────────────────
+//
+// A password is set only by a signed-in user, so the first sign-in (and any password reset)
+// goes through the emailed link, which proves control of the address. The emailed link stays
+// available as the fallback at any time.
+
+export function checkPassword(password: string): void {
+  const issues: string[] = [];
+  if (password.length < MIN_PASSWORD_LENGTH) issues.push(`Use at least ${MIN_PASSWORD_LENGTH} characters`);
+  if (password.length > MAX_PASSWORD_LENGTH) issues.push(`Use at most ${MAX_PASSWORD_LENGTH} characters`);
+  if (issues.length) throw new ValidationError(issues);
+}
+
+/** Sets or changes the signed-in user's password. A user who already has one must give it. */
+export async function setPassword(userId: string, password: string, current?: string): Promise<void> {
+  checkPassword(password);
+  await withSystem(async (tx) => {
+    const [u] = await tx.select({ hash: users.passwordHash }).from(users).where(eq(users.id, userId));
+    if (!u) throw new ValidationError(["Account not found"]);
+    if (u.hash && !verifyPassword(current ?? "", u.hash)) throw new ValidationError(["Current password is incorrect"]);
+    await tx.update(users).set({ passwordHash: hashPassword(password), passwordSetAt: new Date() }).where(eq(users.id, userId));
+  });
+}
+
+export async function hasPassword(userId: string): Promise<boolean> {
+  return withSystem(async (tx) => {
+    const [u] = await tx.select({ hash: users.passwordHash }).from(users).where(eq(users.id, userId));
+    return !!u?.hash;
+  });
+}
+
+/**
+ * Signs in with email and password. Returns undefined on any failure (unknown email, no
+ * password set, wrong password) so the response does not reveal which. Throws when the email
+ * is locked out after repeated failures.
+ */
+export async function loginWithPassword(rawEmail: string, password: string): Promise<Actor | undefined> {
+  const email = normalizeEmail(rawEmail);
+  if (!EMAIL.test(email) || !password) return undefined;
+  return withSystem(async (tx) => {
+    const [{ n }] = (await tx
+      .select({ n: count() })
+      .from(loginAttempts)
+      .where(
+        and(eq(loginAttempts.email, email), eq(loginAttempts.succeeded, false), gt(loginAttempts.createdAt, new Date(Date.now() - LOCKOUT_WINDOW_MS))),
+      )) as [{ n: number }];
+    if (n >= MAX_FAILED_ATTEMPTS) throw new ValidationError(["Too many failed sign-in attempts; try again in 15 minutes or use an emailed link"]);
+    const [u] = await tx.select().from(users).where(eq(users.email, email));
+    const ok = verifyPassword(password, u?.passwordHash); // runs scrypt even when there is no user
+    await tx.insert(loginAttempts).values({ email, succeeded: ok });
+    if (!ok || !u) return undefined;
+    const role = configuredRole(u.email);
+    if (role && u.role !== role) await tx.update(users).set({ role }).where(eq(users.id, u.id));
+    return { id: u.id, email: u.email, role: role ?? (u.role as Role) };
   });
 }
 

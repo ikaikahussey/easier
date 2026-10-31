@@ -15,7 +15,7 @@ import {
   uploadDocument,
 } from "@/core/services/engagements";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/core/services/context";
-import { consumeLogin, createSessionToken, joinWaitlist, readSessionToken, requestLogin } from "@/core/services/auth";
+import { consumeLogin, createSessionToken, hasPassword, joinWaitlist, loginWithPassword, readSessionToken, requestLogin, setPassword } from "@/core/services/auth";
 import { addReviewTime, pilotMetrics, recordInvoice, startReviewTimer, stopReviewTimer } from "@/core/services/operations";
 import { getReviewerProfile, listReviewers, setCredentialVerified, submitCredential } from "@/core/services/reviewers";
 import { OrgVault, unwrapKey } from "@/core/crypto";
@@ -476,6 +476,37 @@ describe("authentication", () => {
   it("rate-limits sign-in requests", async () => {
     for (let i = 0; i < 5; i++) await requestLogin("spam@x.org");
     await expect(requestLogin("spam@x.org")).rejects.toThrow(/Too many/);
+  });
+
+  it("signs in with a password once one is set, and keeps the emailed link as the fallback", async () => {
+    expect(await hasPassword(alice.id)).toBe(false);
+    expect(await loginWithPassword("alice@a.org", "correct horse battery")).toBeUndefined(); // none set yet
+    await expect(setPassword(alice.id, "short")).rejects.toThrow(/at least 12/);
+    await setPassword(alice.id, "correct horse battery");
+    expect(await hasPassword(alice.id)).toBe(true);
+    const stored = await withSystem((tx) => tx.select({ h: schema.users.passwordHash }).from(schema.users).where(eq(schema.users.id, alice.id)));
+    expect(stored[0]!.h).toMatch(/^scrypt\$/);
+    expect(stored[0]!.h).not.toContain("correct horse");
+    expect(await loginWithPassword(" Alice@A.org ", "correct horse battery")).toMatchObject({ id: alice.id, role: "client" });
+    expect(await loginWithPassword("alice@a.org", "wrong password here")).toBeUndefined();
+    expect(await loginWithPassword("nobody@a.org", "correct horse battery")).toBeUndefined();
+    // Changing requires the current password; the emailed link still works regardless.
+    await expect(setPassword(alice.id, "another long password", "nope")).rejects.toThrow(/Current password/);
+    await setPassword(alice.id, "another long password", "correct horse battery");
+    expect(await loginWithPassword("alice@a.org", "another long password")).toBeTruthy();
+    process.env.SITE_ACCESS = "open";
+    expect(await consumeLogin((await requestLogin("alice@a.org"))!)).toMatchObject({ id: alice.id });
+  });
+
+  it("locks password sign-in after repeated failures", async () => {
+    await setPassword(bob.id, "bobs long password!");
+    for (let i = 0; i < 8; i++) expect(await loginWithPassword("bob@b.org", "wrong attempt " + i)).toBeUndefined();
+    await expect(loginWithPassword("bob@b.org", "bobs long password!")).rejects.toThrow(/Too many failed/);
+  });
+
+  it("app role cannot read password hashes", async () => {
+    const err = await withTenant({ userId: alice.id, staff: true }, (tx) => tx.select({ h: schema.users.passwordHash }).from(schema.users)).catch((e: Error) => e);
+    expect(String((err as Error & { cause?: unknown }).cause)).toMatch(/permission denied/);
   });
 
   it("rejects tampered or expired sessions", () => {

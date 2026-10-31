@@ -3,7 +3,16 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { parseForm } from "@/core/fields";
-import { consumeLogin, joinWaitlist, requestLogin, sendLoginLink, type WaitlistKind } from "@/core/services/auth";
+import {
+  consumeLogin,
+  hasPassword,
+  joinWaitlist,
+  loginWithPassword,
+  requestLogin,
+  sendLoginLink,
+  setPassword,
+  type WaitlistKind,
+} from "@/core/services/auth";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/core/services/context";
 import {
   acceptConsents,
@@ -78,7 +87,31 @@ export async function verifyLoginAction(fd: FormData) {
   const actor = await consumeLogin(str(fd, "token"));
   if (!actor) redirect("/login?error=" + encodeURIComponent("That link is invalid or expired. Request a new one."));
   await startSession(actor.id);
+  // An emailed link is how a password is first set or reset, so send the user there when they have none.
+  if (!(await hasPassword(actor.id))) redirect("/account/password?setup=1");
   redirect(actor.role === "client" ? "/app" : "/review");
+}
+
+export async function passwordLoginAction(fd: FormData) {
+  let actor;
+  try {
+    actor = await loginWithPassword(str(fd, "email"), str(fd, "password"));
+  } catch (err) {
+    redirect(`/login?error=${encodeURIComponent(message(err))}`);
+  }
+  if (!actor) redirect("/login?error=" + encodeURIComponent("Email or password is incorrect. You can also request an emailed sign-in link."));
+  await startSession(actor.id);
+  redirect(actor.role === "client" ? "/app" : "/review");
+}
+
+export async function setPasswordAction(fd: FormData) {
+  const actor = await requireActor();
+  await attempt("/account/password", async () => {
+    const password = str(fd, "password");
+    if (password !== str(fd, "confirm")) throw new ValidationError(["Passwords do not match"]);
+    await setPassword(actor.id, password, str(fd, "current") || undefined);
+    return "/account/password?saved=1";
+  });
 }
 
 export async function logoutAction() {
