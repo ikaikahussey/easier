@@ -15,6 +15,7 @@ import {
   todayIn,
   zonedToUtc,
 } from "./rules";
+import { TERMS, termsHash } from "./terms";
 import {
   FUNCTIONS,
   OPERATIONS,
@@ -57,7 +58,13 @@ const programOf = (r: typeof p120Programs.$inferSelect): Program => ({
   derUserId: r.derUserId,
   timeZone: r.timeZone,
   misNotified: r.misNotified,
+  termsHash: r.termsHash ?? undefined,
+  termsSigner: r.termsSigner ?? undefined,
+  termsAcceptedAt: r.termsAcceptedAt?.toISOString(),
 });
+
+/** True when the employer has accepted the terms text currently in force. */
+export const termsCurrent = (p: Program) => p.termsHash === termsHash();
 
 const context = (kind: string, id: string) => `p120:${kind}:${id}`;
 
@@ -90,7 +97,11 @@ function assertClient(actor: Actor) {
   if (actor.role !== "client") throw new ForbiddenError("Only the employer's own people can open its Part 120 program");
 }
 
-/** Run inside the tenant transaction with the decrypted program state. Row-level security scopes every statement to the actor's organizations. */
+/**
+ * Run inside the tenant transaction with the decrypted program state. Row-level security
+ * scopes every statement to the actor's organizations. Nothing runs until the employer has
+ * accepted the terms currently in force.
+ */
 async function run<T>(actor: Actor, orgId: string, now: Date, fn: (c: Ctx) => Promise<T>): Promise<T> {
   assertClient(actor);
   return withTenant(principal(actor), async (tx) => {
@@ -98,6 +109,7 @@ async function run<T>(actor: Actor, orgId: string, now: Date, fn: (c: Ctx) => Pr
     if (!row) throw new NotFoundError("Part 120 program not found");
     const vault = await vaultFor(tx, orgId);
     const program = programOf(row);
+    if (!termsCurrent(program)) throw new ForbiddenError("Your designated employer representative must accept the current Part 120 terms before the desk can be used");
     const state = await loadState(tx, vault, program);
     const c: Ctx = {
       tx,
@@ -179,7 +191,7 @@ export async function getDesk(actor: Actor, orgId: string): Promise<Desk> {
     const [row] = await tx.select().from(p120Programs).where(eq(p120Programs.orgId, orgId));
     if (!row) return { orgName: org.name, isDer: false };
     const program = programOf(row);
-    const state = await loadState(tx, await vaultFor(tx, orgId), program);
+    const state = termsCurrent(program) ? await loadState(tx, await vaultFor(tx, orgId), program) : undefined;
     const [der] = await tx.select({ name: users.name }).from(users).where(eq(users.id, program.derUserId));
     return { orgName: org.name, program, state, derName: program.derUserId === actor.id ? actor.email : (der?.name ?? undefined), isDer: program.derUserId === actor.id };
   });
@@ -189,9 +201,10 @@ export async function getDesk(actor: Actor, orgId: string): Promise<Desk> {
 export async function enroll(
   actor: Actor,
   orgId: string,
-  input: { operation?: string; registrationKind?: string; registrationRef?: string; timeZone?: string },
+  input: { operation?: string; registrationKind?: string; registrationRef?: string; timeZone?: string } & TermsAcceptance,
 ): Promise<void> {
   assertClient(actor);
+  const terms = acceptance(input);
   const operation = oneOf(input.operation, Object.keys(OPERATIONS) as Operation[], "Operation type");
   const registrationKind = oneOf(input.registrationKind, ["a449", "registration"] as const, "Registration type");
   const registrationRef = text(input.registrationRef, "Registration reference", 80);
@@ -201,8 +214,39 @@ export async function enroll(
     if (!member) throw new NotFoundError("Organization not found");
     const [existing] = await tx.select().from(p120Programs).where(eq(p120Programs.orgId, orgId));
     if (existing) fail("This organization already has a Part 120 program");
-    await tx.insert(p120Programs).values({ orgId, operation, registrationKind, registrationRef, derUserId: actor.id, timeZone });
+    await tx.insert(p120Programs).values({ orgId, operation, registrationKind, registrationRef, derUserId: actor.id, timeZone, ...terms, termsAcceptedBy: actor.id });
     await tx.insert(p120Log).values({ orgId, actorId: actor.id, type: "enrolled" });
+    await tx.insert(p120Log).values({ orgId, actorId: actor.id, type: "terms_accepted" });
+  });
+}
+
+export interface TermsAcceptance {
+  /** The hash of the text the signer was shown; must match the text in force. */
+  termsHash?: string;
+  signerName?: string;
+  signerTitle?: string;
+}
+
+function acceptance(input: TermsAcceptance) {
+  if (input.termsHash !== termsHash()) fail("The terms have changed. Review and accept the current text");
+  return {
+    termsVersion: TERMS.version,
+    termsHash: termsHash(),
+    termsSigner: `${text(input.signerName, "Signer name", 120)}, ${text(input.signerTitle, "Signer title", 80)}`,
+    termsAcceptedAt: new Date(),
+  };
+}
+
+/** Accept revised terms. Only the designated employer representative can bind the employer. */
+export async function acceptTerms(actor: Actor, orgId: string, input: TermsAcceptance): Promise<void> {
+  assertClient(actor);
+  const terms = acceptance(input);
+  await withTenant(principal(actor), async (tx) => {
+    const [row] = await tx.select().from(p120Programs).where(eq(p120Programs.orgId, orgId));
+    if (!row) throw new NotFoundError("Part 120 program not found");
+    if (row.derUserId !== actor.id) throw new ForbiddenError("Only the designated employer representative can accept the terms");
+    await tx.update(p120Programs).set({ ...terms, termsAcceptedBy: actor.id }).where(eq(p120Programs.orgId, orgId));
+    await tx.insert(p120Log).values({ orgId, actorId: actor.id, type: "terms_accepted" });
   });
 }
 

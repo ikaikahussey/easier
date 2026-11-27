@@ -6,6 +6,7 @@ import { createOrganization } from "@/core/services/organizations";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/core/services/context";
 import { audit, clearance, openItems, randomStatus } from "@/programs/part-120/rules";
 import {
+  acceptTerms,
   addContractor,
   addPerson,
   assignDuty,
@@ -26,6 +27,7 @@ import {
   setCoverage,
   setMisNotified,
 } from "@/programs/part-120/service";
+import { TERMS, termsHash } from "@/programs/part-120/terms";
 import { freshDb, makeUser } from "./helpers/db";
 
 let db: Db;
@@ -36,7 +38,7 @@ let rita: Actor; // easier.company reviewer
 let org: string;
 let other: string;
 
-const ENROLL = { operation: "part135", registrationKind: "a449", registrationRef: "A449 / RBK-135", timeZone: "Pacific/Honolulu" };
+const ENROLL = { operation: "part135", registrationKind: "a449", registrationRef: "A449 / RBK-135", timeZone: "Pacific/Honolulu", termsHash: termsHash(), signerName: "Dana Okafor", signerTitle: "Director of Operations" };
 // Thursday 2026-11-26, 09:30 in Honolulu.
 const NOW = new Date("2026-11-26T19:30:00Z");
 
@@ -71,12 +73,15 @@ describe("enrollment and access", () => {
 
   it("validates enrollment and makes the enrolling member the representative", async () => {
     await expect(enroll(dana, org, { ...ENROLL, timeZone: "Mars/Olympus" })).rejects.toThrow(ValidationError);
+    await expect(enroll(dana, org, { ...ENROLL, termsHash: "stale" })).rejects.toThrow(/terms have changed/);
+    await expect(enroll(dana, org, { ...ENROLL, signerTitle: " " })).rejects.toThrow(/Signer title is required/);
     await expect(enroll(bob, org, ENROLL)).rejects.toThrow(NotFoundError);
     await expect(enroll(rita, org, ENROLL)).rejects.toThrow(ForbiddenError);
     await enroll(dana, org, ENROLL);
     await expect(enroll(luis, org, ENROLL)).rejects.toThrow(/already has/);
     const d = await getDesk(dana, org);
     expect(d.program).toMatchObject({ operation: "part135", registrationRef: "A449 / RBK-135", derUserId: dana.id, timeZone: "Pacific/Honolulu" });
+    expect(d.program).toMatchObject({ termsHash: termsHash(), termsSigner: "Dana Okafor, Director of Operations" });
     expect(d.isDer).toBe(true);
     expect((await getDesk(luis, org)).isDer).toBe(false);
   });
@@ -306,6 +311,27 @@ describe("exports, log, and isolation", () => {
         tx.insert(schema.p120Programs).values({ orgId: other, operation: "part135", registrationKind: "a449", registrationRef: "x", derUserId: dana.id, timeZone: "UTC" }),
       ),
     ).rejects.toThrow();
+  });
+
+  it("pauses the desk when the terms change until the representative accepts them", async () => {
+    const [before] = await db.select().from(schema.p120Programs).where(eq(schema.p120Programs.orgId, org));
+    expect(before).toMatchObject({ termsVersion: TERMS.version, termsAcceptedBy: dana.id });
+    // Simulate a revision: the stored acceptance no longer matches the text in force.
+    await db.update(schema.p120Programs).set({ termsHash: "an-earlier-text" }).where(eq(schema.p120Programs.orgId, org));
+    const paused = await getDesk(luis, org);
+    expect(paused.program).toBeDefined();
+    expect(paused.state).toBeUndefined(); // nothing is decrypted while paused
+    await expect(addPerson(dana, org, { name: "X", title: "Y", functions: ["maintenance"] }, NOW)).rejects.toThrow(/accept the current Part 120 terms/);
+    await expect(rosterCsv(dana, org, NOW)).rejects.toThrow(ForbiddenError);
+    await expect(runDraw(luis, org, NOW)).rejects.toThrow(ForbiddenError);
+    await expect(acceptTerms(luis, org, ENROLL)).rejects.toThrow(/Only the designated employer representative/);
+    await expect(acceptTerms(bob, org, ENROLL)).rejects.toThrow(NotFoundError);
+    await expect(acceptTerms(dana, org, { ...ENROLL, termsHash: "an-earlier-text" })).rejects.toThrow(/terms have changed/);
+    await acceptTerms(dana, org, { ...ENROLL, signerTitle: "Accountable Executive" });
+    const resumed = await getDesk(luis, org);
+    expect(resumed.program?.termsSigner).toBe("Dana Okafor, Accountable Executive");
+    expect(resumed.state?.people.length).toBeGreaterThan(4);
+    expect((await recentLog(dana, org, 3)).map((l) => l.type)).toContain("terms_accepted");
   });
 
   it("gives the same answer to the second member, who is not the representative", async () => {

@@ -25,6 +25,7 @@ import {
   type View,
 } from "@/programs/part-120/rules";
 import { getDesk, part120Enabled, recentLog } from "@/programs/part-120/service";
+import { TERMS, termsHash } from "@/programs/part-120/terms";
 import { FUNCTIONS, OPERATIONS, TEST_REASONS, TIME_ZONES, type Person, type State, type Test, type WithId } from "@/programs/part-120/types";
 import { Button, buttonClass, Card, inputClass, Notice, PageTitle, Shell } from "@/ui/components";
 import { requireActor } from "@/ui/session";
@@ -96,6 +97,54 @@ export default async function Part120Desk({
     </form>
   );
 
+  /** The terms text with the acceptance fields. Rendered inside the enrollment and re-acceptance forms. */
+  const TermsFields = () => (
+    <div className="sm:col-span-2">
+      <h3 className="mb-2 text-lg">{TERMS.title}</h3>
+      <ol className="mb-4 max-w-[80ch] list-decimal space-y-2 pl-6 text-sm">
+        {TERMS.paragraphs.map((t) => (
+          <li key={t}>{t}</li>
+        ))}
+      </ol>
+      <p className="mb-3 text-xs text-muted">Version {TERMS.version}</p>
+      <input type="hidden" name="termsHash" value={termsHash()} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Label text="Your name *">
+          <input name="signerName" required maxLength={120} autoComplete="name" className={inputClass} />
+        </Label>
+        <Label text="Your title *">
+          <input name="signerTitle" required maxLength={80} className={inputClass} />
+        </Label>
+      </div>
+      <label className="mt-3 flex items-start gap-2 text-sm">
+        <input type="checkbox" name="accept" required className="mt-1" />
+        <span>I accept these terms for {desk.orgName} and have authority to do so.</span>
+      </label>
+    </div>
+  );
+
+  if (desk.program && !desk.state) {
+    return (
+      <Shell actor={actor}>
+        <Notice error={error} />
+        <PageTitle kicker={desk.orgName}>Part 120 Compliance Desk</PageTitle>
+        <Card title={desk.program.termsHash ? "The terms have changed" : "Accept the terms"}>
+          {desk.isDer ? (
+            <Op op="accept_terms" className="grid gap-4 sm:grid-cols-2">
+              <p className="text-sm sm:col-span-2">The desk is paused until you accept the current terms. Your records are unchanged.</p>
+              <TermsFields />
+              <div className="sm:col-span-2">
+                <Button type="submit">Accept and continue</Button>
+              </div>
+            </Op>
+          ) : (
+            <p className="text-sm">The desk is paused until your designated employer representative{desk.derName ? ` (${desk.derName})` : ""} accepts the current terms. Your records are unchanged.</p>
+          )}
+        </Card>
+      </Shell>
+    );
+  }
+
   if (!desk.program || !desk.state) {
     return (
       <Shell actor={actor}>
@@ -132,6 +181,7 @@ export default async function Part120Desk({
             <Label text="Registration reference *">
               <input name="registrationRef" required maxLength={80} className={inputClass} />
             </Label>
+            <TermsFields />
             <div className="sm:col-span-2">
               <Button type="submit">Start program</Button>
             </div>
@@ -927,7 +977,7 @@ export default async function Part120Desk({
       {body}
       <p className="mt-8 text-xs text-muted">
         This desk records what your organization enters and applies fixed rules from 14 CFR part 120 and 49 CFR part 40. It makes no determinations, does not replace your medical review
-        officer, collector, or substance abuse professional, and does not transfer your responsibility for the program.
+        officer, collector, or substance abuse professional, and does not transfer your responsibility for the program. Terms version {TERMS.version}, accepted by {s.program.termsSigner}.
       </p>
     </Shell>
   );
