@@ -5,6 +5,7 @@ import { listEngagements } from "@/core/services/engagements";
 import { listOrganizations } from "@/core/services/organizations";
 import { formatUsd } from "@/core/money";
 import { PRODUCTS } from "@/products";
+import { part120Enabled } from "@/programs/part-120/service";
 import { Button, buttonClass, Card, Notice, Shell, StatusBadge, inputClass } from "@/ui/components";
 import { requireActor } from "@/ui/session";
 
@@ -62,6 +63,11 @@ export default async function Dashboard({
                 Start {p.name}
               </Link>
             ))}
+            {part120Enabled() && (
+              <Link href={`/p120/${org.id}`} className={buttonClass("quiet")}>
+                Part 120 Compliance Desk
+              </Link>
+            )}
           </div>
         </Card>
       ))}

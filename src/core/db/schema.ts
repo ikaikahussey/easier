@@ -208,3 +208,57 @@ export const events = pgTable(
   },
   (t) => [engagementChild(t, "events_engagement_fk"), index("events_engagement_idx").on(t.engagementId)],
 );
+
+// ── Part 120 Compliance Desk ─────────────────────────────────────────────────
+// An ongoing compliance program rather than an engagement. Members of the employer's
+// organization are the only readers and writers: row-level security gives staff no access,
+// because a service agent may not act as the employer's representative and test records
+// are confidential under 49 CFR part 40. See drizzle/0007_part120.sql.
+
+export const p120Programs = pgTable("p120_programs", {
+  orgId: uuid("org_id")
+    .primaryKey()
+    .references(() => organizations.id),
+  operation: text("operation").notNull(),
+  registrationKind: text("registration_kind").notNull(),
+  registrationRef: text("registration_ref").notNull(),
+  /** The designated employer representative: always a member of the organization. */
+  derUserId: uuid("der_user_id")
+    .notNull()
+    .references(() => users.id),
+  timeZone: text("time_zone").notNull(),
+  misNotified: boolean("mis_notified").notNull().default(false),
+  createdAt: createdAt(),
+});
+
+/** One sealed row per person, test, draw, event, contractor, or filing. */
+export const p120Records = pgTable(
+  "p120_records",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => p120Programs.orgId),
+    kind: text("kind").notNull(),
+    dataEnc: text("data_enc").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("p120_records_org_kind_idx").on(t.orgId, t.kind)],
+);
+
+/** Append-only log of every change to the program. */
+export const p120Log = pgTable(
+  "p120_log",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => p120Programs.orgId),
+    actorId: uuid("actor_id").references(() => users.id),
+    type: text("type").notNull(),
+    payloadEnc: text("payload_enc"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("p120_log_org_idx").on(t.orgId, t.createdAt)],
+);

@@ -34,6 +34,7 @@ const server = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", 
     PREPARER_OF_RECORD: "Rita Reyes, EA",
     ACCESS_EMAILS: "alice@a.org,bob@b.org,pw@a.org,signup@a.org",
     SITE_ACCESS: "",
+    P120_ENABLED: "1",
     SESSION_SECRET: "e2e-session-secret-0123456789abcdefghij",
     DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
   },
@@ -477,6 +478,64 @@ async function main() {
 
   const audit = await alice.get(engagementUrl);
   assert.match(text(audit), /staff viewed/);
+  // Part 120 Compliance Desk: enrollment, the clearance gate, the roster export, a draw, and isolation.
+  {
+    const op = (name) => (f) => f.querySelector("input[name=op]")?.getAttribute("value") === name;
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Honolulu" }).format(new Date());
+    const deskLink = (await alice.get("/app")).doc.querySelectorAll("a").find((a) => /^\/p120\//.test(a.getAttribute("href") ?? ""));
+    assert.ok(deskLink, "Part 120 link missing from the organization page");
+    const deskUrl = deskLink.getAttribute("href");
+    let desk = await alice.get(deskUrl);
+    assert.match(text(desk), /Start the program/);
+    assert.match(desk.headers.get("cache-control"), /no-store/);
+    const badEnroll = await alice.submit(desk, op("enroll"), { operation: "part135", timeZone: "Mars/Olympus", registrationKind: "a449", registrationRef: "A449 / KLC" });
+    assert.match(text(badEnroll), /Time zone is not valid/);
+    desk = await alice.submit(desk, op("enroll"), { operation: "part135", timeZone: "Pacific/Honolulu", registrationKind: "a449", registrationRef: "A449 / KLC" });
+    assert.match(text(desk), /No open items/);
+    assert.match(text(desk), /representative: alice@a\.org/);
+
+    let roster = await alice.get(`${deskUrl}?view=roster`);
+    roster = await alice.submit(roster, op("add_person"), { name: "Hana Kim", title: "Mechanic", functions: "maintenance" });
+    assert.match(text(roster), /Hana Kim/);
+    assert.match(text(roster), /Blocked from safety-sensitive duty\. Pre-employment drug test not ordered/);
+    assert.ok(roster.doc.querySelectorAll("form").find(op("assign_duty")).querySelector("button[disabled]"), "assign button is enabled while blocked");
+    // The server refuses even if the disabled button is bypassed.
+    const refused = await alice.submit(roster, op("assign_duty"));
+    assert.match(text(refused), /Duty assignment blocked/);
+
+    roster = await alice.submit(roster, op("order_test"));
+    assert.match(text(roster), /ordered \d{4}-\d{2}-\d{2}, pending/);
+    roster = await alice.submit(roster, op("result"), { result: "negative", collectedOn: today, verifiedOn: today });
+    roster = await alice.submit(roster, op("consent"), { on: today });
+    roster = await alice.submit(roster, op("asked"), { on: today });
+    roster = await alice.submit(roster, op("no_prior_dot"));
+    assert.match(text(roster), /Cleared/);
+    assert.ok(!roster.doc.querySelectorAll("form").find(op("assign_duty")).querySelector("button[disabled]"), "assign button still disabled when cleared");
+    roster = await alice.submit(roster, op("assign_duty"));
+    assert.match(text(roster), /On duty/);
+    assert.match(text(roster), new RegExp(`First safety-sensitive duty: ${today}`));
+
+    const csvFile = await alice.get(`${deskUrl}/roster.csv`);
+    assert.equal(csvFile.status, 200);
+    assert.match(csvFile.headers.get("content-type"), /text\/csv/);
+    assert.match(csvFile.html, /"Hana Kim","Mechanic","Aircraft maintenance or preventive maintenance","cleared"/);
+
+    let random = await alice.get(`${deskUrl}?view=random`);
+    random = await alice.submit(random, op("draw"));
+    assert.match(text(random), /pool of 1/);
+    assert.match(text(random), /Selections awaiting a test/);
+    assert.match(text(await alice.get(`${deskUrl}?view=dashboard`)), /Random drug test not collected: Hana Kim/);
+    assert.match(text(await alice.get(`${deskUrl}?view=audit`)), /enrolled/);
+    assert.match(text(await alice.get(`${deskUrl}?view=records`)), /Random selection list, \d{4} Q\d/);
+
+    // Another employer gets a 404; staff are turned away from the desk and the export.
+    assert.equal((await bob.get(deskUrl)).status, 404);
+    assert.equal((await bob.get(`${deskUrl}/roster.csv`)).status, 404);
+    assert.match((await rita.get(deskUrl)).url, /\/review$/);
+    assert.equal((await rita.get(`${deskUrl}/roster.csv`)).status, 404);
+    assert.match((await anon.get(deskUrl)).url, /\/login$/);
+  }
+
   console.log("E2E passed");
 }
 

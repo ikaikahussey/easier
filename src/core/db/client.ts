@@ -6,7 +6,12 @@ import * as schema from "./schema";
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-let instance: Promise<Db> | undefined;
+/**
+ * One connection per process, held on globalThis. Next.js can bundle pages and route handlers
+ * into separate module graphs; a module-level variable would then open a second embedded
+ * database on the same directory, and each would miss the other's writes.
+ */
+const holder = globalThis as { __easierDb?: Promise<Db> };
 
 async function connect(): Promise<Db> {
   const url = process.env.DATABASE_URL;
@@ -27,13 +32,13 @@ async function connect(): Promise<Db> {
 }
 
 export function getDb(): Promise<Db> {
-  instance ??= connect();
-  return instance;
+  holder.__easierDb ??= connect();
+  return holder.__easierDb;
 }
 
 /** Tests inject an isolated database. */
 export function setDb(db: Db | undefined) {
-  instance = db ? Promise.resolve(db) : undefined;
+  holder.__easierDb = db ? Promise.resolve(db) : undefined;
 }
 
 export interface Principal {
