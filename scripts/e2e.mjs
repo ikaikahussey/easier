@@ -490,11 +490,16 @@ async function main() {
     let desk = await alice.get(deskUrl);
     assert.match(text(desk), /Start the program/);
     assert.match(desk.headers.get("cache-control"), /no-store/);
-    const badEnroll = await alice.submit(desk, op("enroll"), { operation: "part135", timeZone: "Mars/Olympus", registrationKind: "a449", registrationRef: "A449 / KLC" });
+    const enrollment = { operation: "part135", timeZone: "Pacific/Honolulu", registrationKind: "a449", registrationRef: "A449 / KLC", signerName: "Alice Akana", signerTitle: "Director of Operations" };
+    assert.match(text(desk), /We are not your designated employer representative/);
+    const unaccepted = await alice.submit(desk, op("enroll"), enrollment);
+    assert.match(text(unaccepted), /Accept the terms to start the program/);
+    const badEnroll = await alice.submit(desk, op("enroll"), { ...enrollment, accept: true, timeZone: "Mars/Olympus" });
     assert.match(text(badEnroll), /Time zone is not valid/);
-    desk = await alice.submit(desk, op("enroll"), { operation: "part135", timeZone: "Pacific/Honolulu", registrationKind: "a449", registrationRef: "A449 / KLC" });
+    desk = await alice.submit(desk, op("enroll"), { ...enrollment, accept: true });
     assert.match(text(desk), /No open items/);
     assert.match(text(desk), /representative: alice@a\.org/);
+    assert.match(text(desk), /Terms version \S+, accepted by Alice Akana, Director of Operations/);
 
     let roster = await alice.get(`${deskUrl}?view=roster`);
     roster = await alice.submit(roster, op("add_person"), { name: "Hana Kim", title: "Mechanic", functions: "maintenance" });
@@ -536,6 +541,16 @@ async function main() {
     assert.match((await rita.get(deskUrl)).url, /\/review$/);
     assert.equal((await rita.get(`${deskUrl}/roster.csv`)).status, 404);
     assert.match((await anon.get(deskUrl)).url, /\/login$/);
+
+    // Public operator page: states what the desk does not do, and takes access requests.
+    const operators = await anon.get("/part-120");
+    assert.equal(operators.status, 200);
+    assert.match(text(operators), /Act as your designated employer representative\. That role stays with you\./);
+    assert.doesNotMatch(text(operators), /per (month|year|certificate)|pricing/i); // no prices published
+    const asked = await anon.submit(operators, (f) => !!f.querySelector("input[name=email]"), { email: "ops@ridgeback.example" });
+    assert.match(text(asked), /Request received/);
+    const badAsk = await anon.submit(operators, (f) => !!f.querySelector("input[name=email]"), { email: "nope" });
+    assert.match(text(badAsk), /Enter a valid email address/);
   }
 
   console.log("E2E passed");

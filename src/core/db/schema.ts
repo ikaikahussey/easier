@@ -83,7 +83,7 @@ export const loginAttempts = pgTable("login_attempts", {
 /** Launch waitlist. System access only: the restricted app role has no grant on this table. */
 export const waitlist = pgTable("waitlist", {
   email: text("email").primaryKey(),
-  kind: text("kind", { enum: ["nonprofit", "small_business", "other"] }).notNull().default("other"),
+  kind: text("kind", { enum: ["nonprofit", "small_business", "aviation", "other"] }).notNull().default("other"),
   createdAt: createdAt(),
 });
 
@@ -228,6 +228,12 @@ export const p120Programs = pgTable("p120_programs", {
     .references(() => users.id),
   timeZone: text("time_zone").notNull(),
   misNotified: boolean("mis_notified").notNull().default(false),
+  /** The terms text the employer accepted (see src/programs/part-120/terms.ts). */
+  termsVersion: text("terms_version"),
+  termsHash: text("terms_hash"),
+  termsSigner: text("terms_signer"),
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsAcceptedBy: uuid("terms_accepted_by").references(() => users.id),
   createdAt: createdAt(),
 });
 

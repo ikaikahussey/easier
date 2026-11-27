@@ -4,7 +4,9 @@ import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { CryptoError } from "@/core/crypto";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/core/services/context";
+import { joinWaitlist } from "@/core/services/auth";
 import {
+  acceptTerms,
   addContractor,
   addPerson,
   assignDuty,
@@ -57,7 +59,12 @@ export async function p120Action(fd: FormData) {
   try {
     switch (s("op")) {
       case "enroll":
-        await enroll(actor, orgId, { operation: s("operation"), registrationKind: s("registrationKind"), registrationRef: s("registrationRef"), timeZone: s("timeZone") });
+        if (!on("accept")) throw new ValidationError(["Accept the terms to start the program"]);
+        await enroll(actor, orgId, { operation: s("operation"), registrationKind: s("registrationKind"), registrationRef: s("registrationRef"), timeZone: s("timeZone"), termsHash: s("termsHash"), signerName: s("signerName"), signerTitle: s("signerTitle") });
+        break;
+      case "accept_terms":
+        if (!on("accept")) throw new ValidationError(["Accept the terms to continue"]);
+        await acceptTerms(actor, orgId, { termsHash: s("termsHash"), signerName: s("signerName"), signerTitle: s("signerTitle") });
         break;
       case "add_person":
         await addPerson(actor, orgId, { name: s("name"), title: s("title"), functions: all("functions"), supervisor: on("supervisor"), medical: on("medical"), airman: on("airman"), hiredOn: opt("hiredOn"), contractorId: opt("contractorId") });
@@ -134,4 +141,17 @@ export async function p120Action(fd: FormData) {
   }
   revalidatePath(`/p120/${orgId}`);
   redirect(back);
+}
+
+/** Public request for access from the operator page. Stored on the waitlist as an aviation contact. */
+export async function requestPart120AccessAction(fd: FormData) {
+  if (!part120Enabled()) notFound();
+  const email = fd.get("email");
+  try {
+    await joinWaitlist(typeof email === "string" ? email : "", "aviation");
+  } catch (err) {
+    if (err && typeof err === "object" && "digest" in err) throw err;
+    redirect(`/part-120?error=${encodeURIComponent(message(err))}#access`);
+  }
+  redirect("/part-120?requested=1#access");
 }

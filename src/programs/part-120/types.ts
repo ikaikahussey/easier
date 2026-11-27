@@ -51,6 +51,10 @@ export interface Program {
   timeZone: string;
   /** The FAA has notified this employer in writing to file the annual report (14 CFR 120.119). */
   misNotified: boolean;
+  /** Hash and signer of the terms the employer last accepted; undefined if never accepted. */
+  termsHash?: string;
+  termsSigner?: string;
+  termsAcceptedAt?: string;
 }
 
 export type IsoDate = string; // YYYY-MM-DD

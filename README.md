@@ -97,7 +97,15 @@ It is a program, not a product: there is no engagement, quote, draft, or reviewe
 
 **Data.** `p120_programs` holds settings. `p120_records` holds one row per person, test, draw, event, contractor, or filing, each sealed with the organization's key and bound to its kind and id. `p120_log` is append-only. Row-level security admits organization members only; the restricted role cannot delete records or change the log. The roster export states who is cleared and never why, because a reason can reveal a test result.
 
+**Terms.** The employer accepts `src/programs/part-120/terms.ts` at enrollment; the program row stores the version, a hash of the text shown, the signer, and the time. If the text changes, the desk pauses for that employer (nothing is decrypted or recorded) until its representative accepts the new text. The text is a draft for counsel to review.
+
+**Operator page.** `/part-120` is public when the flag is on: what the desk does and does not do, no prices, and an access request form that adds the email to the waitlist as `aviation`. The home-page teaser does not link to it.
+
 **Not built:** document intake (custody forms, review officer letters), follow-up test schedules from a substance abuse professional's plan, accidents involving several employees in one entry, API tokens for scheduling systems, deletion of records past retention, and transfer of the DER role.
+
+## Priorities
+
+`node scripts/priorities.mjs` ranks the open work. It applies the order risk, then revenue, then moat, with risk treated as a gate on each service line (ranked by the value of what it unblocks), moat as a multiplier on revenue, and deadlines with lead time pulled forward. The line and item estimates at the top of the script are entered by hand; edit them and rerun.
 
 ## Client data protection
 

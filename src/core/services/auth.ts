@@ -37,7 +37,7 @@ export type WaitlistKind = (typeof waitlist.$inferInsert)["kind"];
 export async function joinWaitlist(rawEmail: string, kind: WaitlistKind = "other"): Promise<void> {
   const email = normalizeEmail(rawEmail);
   if (!EMAIL.test(email)) throw new ValidationError(["Enter a valid email address"]);
-  const k = kind === "nonprofit" || kind === "small_business" ? kind : "other";
+  const k = kind === "nonprofit" || kind === "small_business" || kind === "aviation" ? kind : "other";
   await withSystem((tx) => tx.insert(waitlist).values({ email, kind: k }).onConflictDoNothing());
 }
 
