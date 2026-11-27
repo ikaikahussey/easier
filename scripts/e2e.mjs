@@ -484,6 +484,8 @@ async function main() {
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Honolulu" }).format(new Date());
     const deskLink = (await alice.get("/app")).doc.querySelectorAll("a").find((a) => /^\/p120\//.test(a.getAttribute("href") ?? ""));
     assert.ok(deskLink, "Part 120 link missing from the organization page");
+    assert.match(text(await alice.get("/")), /Easier Compliance \(beta\).*Part 120 Compliance Desk.*Signed by: your own designated employer representative/);
+    assert.doesNotMatch(text(await anon.get("/")), /Part 120|Easier Compliance/); // not on the public teaser
     const deskUrl = deskLink.getAttribute("href");
     let desk = await alice.get(deskUrl);
     assert.match(text(desk), /Start the program/);

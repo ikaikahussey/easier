@@ -71,7 +71,7 @@ What the November 2026 pilot needs to run real engagements:
 
 ## Part 120 Compliance Desk
 
-An ongoing compliance program for employers with an FAA drug and alcohol testing program (14 CFR part 120, with procedures from 49 CFR part 40). It is off unless `P120_ENABLED=1`. When on, each organization page links to `/p120/{orgId}`.
+An ongoing compliance program for employers with an FAA drug and alcohol testing program (14 CFR part 120, with procedures from 49 CFR part 40). It is off unless `P120_ENABLED=1`. When on, it is listed on the signed-in home page and each organization page links to `/p120/{orgId}`. Programs are registered in `src/programs/index.ts`, the counterpart of the product registry.
 
 It is a program, not a product: there is no engagement, quote, draft, or reviewer. The employer's own designated employer representative (DER) enters facts and owns every decision. easier.company is a service agent, and 49 CFR 40.355 bars a service agent from acting as DER, so staff accounts have no access to these tables at all.
 
