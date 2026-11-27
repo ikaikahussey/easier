@@ -31,7 +31,7 @@ const config: NextConfig = {
     // Client data pages must not be cached by browsers or intermediaries.
     return [
       { source: "/:path*", headers: securityHeaders },
-      { source: "/(app|engagements|review)/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
+      { source: "/(app|engagements|review|p120)/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
     ];
   },
 };

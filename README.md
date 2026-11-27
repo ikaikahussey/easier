@@ -29,6 +29,8 @@ src/core/            product-agnostic platform
   db/                Drizzle schema + client, tenant/system transaction scopes
   services/          organizations, engagements, auth (the only path from UI to data)
 src/domains/nonprofit  990-keyed line catalog shared by Books and Form 990
+src/programs/        ongoing compliance programs (not engagements)
+  part-120/          FAA drug and alcohol testing program desk: types, rules, service
 src/products/        form-990, books, and the registry (index.ts)
   form-990/parts/      core-form parts: heading, IV (checklist), V, VI, VII, XI–XII
   form-990/schedules/  one module per IRS schedule (A, B, C, D, E, F, G, I, J, L, M, N, R): intake, computation, rules, worksheet
@@ -66,6 +68,36 @@ What the November 2026 pilot needs to run real engagements:
 - **Labor Pledge accrual.** `/admin` totals the pledge on signed work until a recipient fund is chosen.
 
 **Classification pipeline:** reviewer override → keyword rule → AI (validated against the account type) → catch-all line flagged for review. AI outputs are cached per draft by input hash, so reviewer edits do not trigger new model calls unless an AI input changed. Without `ANTHROPIC_API_KEY`, deterministic fallbacks run and unmatched accounts are routed to the reviewer.
+
+## Part 120 Compliance Desk
+
+An ongoing compliance program for employers with an FAA drug and alcohol testing program (14 CFR part 120, with procedures from 49 CFR part 40). It is off unless `P120_ENABLED=1`. When on, it is listed on the signed-in home page and each organization page links to `/p120/{orgId}`. Programs are registered in `src/programs/index.ts`, the counterpart of the product registry.
+
+It is a program, not a product: there is no engagement, quote, draft, or reviewer. The employer's own designated employer representative (DER) enters facts and owns every decision. easier.company is a service agent, and 49 CFR 40.355 bars a service agent from acting as DER, so staff accounts have no access to these tables at all.
+
+| View | What it does |
+| --- | --- |
+| Dashboard | Open items ranked critical first |
+| Roster | Each person's file and the clearance gate; `roster.csv` for a scheduling system |
+| Random | Quarterly draw from the people on duty, progress against the annual minimum |
+| Events | Post-accident and reasonable-cause clocks; collection or a recorded reason |
+| Records | Index of records with the earliest discard date and its basis |
+| Contractors | Coverage for anyone doing safety-sensitive work by contract |
+| Audit | Self-audit scored from the records, plus the activity log |
+| Annual report | MIS draft counts; whether a report is required; DER records the filing |
+
+**Rules** live in `src/programs/part-120/rules.ts` as pure functions with their citations, and no model call decides anything. Values checked in November 2026:
+
+- Clearance: verified negative pre-employment drug result before first duty (120.109(a)); written consent, the two-year prior-employer request, and the direct question (49 CFR 40.25); records obtained or a good-faith effort documented within 30 days of first duty.
+- Random: 25 percent drugs, 10 percent alcohol for 2025 and 2026. **Add each new year's rates to `RULES.randomRates` when the FAA publishes them**; until then the default applies and the audit says the rate is unconfirmed.
+- Clocks: post-accident drug test within 32 hours; alcohol within 2 hours or record why, stop at 8 hours.
+- Reports: Federal Air Surgeon and FAA within 2 working days (weekends skipped, federal holidays not).
+- Retention: 5 years for violations, reports, and annual reports; 3 for prior-employer records; 2 for training and testing decisions; 1 for negatives. Pilots' negative results are held 5 years as a conservative reading of the pilot-records exception; confirm before relying on it.
+- Annual report: Part 121, 50 or more covered employees on January 1, or FAA notice; due March 15.
+
+**Data.** `p120_programs` holds settings. `p120_records` holds one row per person, test, draw, event, contractor, or filing, each sealed with the organization's key and bound to its kind and id. `p120_log` is append-only. Row-level security admits organization members only; the restricted role cannot delete records or change the log. The roster export states who is cleared and never why, because a reason can reveal a test result.
+
+**Not built:** document intake (custody forms, review officer letters), follow-up test schedules from a substance abuse professional's plan, accidents involving several employees in one entry, API tokens for scheduling systems, deletion of records past retention, and transfer of the DER role.
 
 ## Client data protection
 
@@ -105,6 +137,8 @@ npm run check      # typecheck → unit/integration tests → production build �
 - `tests/schedules.test.ts`: each schedule's computation against figures worked by hand from the fixtures.
 - `tests/core-form.test.ts`: form selection by age, Part IV answers, Part VII, Part XI reconciliation, Parts V–VI, Schedules E, N, C averaging, R Part V, D Parts VII–X, and the export.
 - `tests/services.test.ts`: full lifecycle plus tenant isolation against real Postgres (PGlite) with RLS, and pilot operations (consents, credentials, review time, e-filing record, invoices, metrics).
+- `tests/part120.test.ts`: Part 120 rules: clearance gate, draw planning, event clocks, reports, retention, annual report, self-audit.
+- `tests/part120-services.test.ts`: Part 120 lifecycle against real Postgres (PGlite) with RLS, including denial to other tenants and to staff.
 - `scripts/e2e.mjs`: drives the production build through plain HTML forms (no JavaScript) for sign-in, intake, upload, engagement terms, AI draft, reviewer claim, reclassify, credential verification, approve, e-filing record, keying sheet, and invoice, plus cross-tenant 404s.
 
 ## Deploying (Vercel + Neon)

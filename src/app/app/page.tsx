@@ -5,6 +5,7 @@ import { listEngagements } from "@/core/services/engagements";
 import { listOrganizations } from "@/core/services/organizations";
 import { formatUsd } from "@/core/money";
 import { PRODUCTS } from "@/products";
+import { activePrograms } from "@/programs";
 import { Button, buttonClass, Card, Notice, Shell, StatusBadge, inputClass } from "@/ui/components";
 import { requireActor } from "@/ui/session";
 
@@ -60,6 +61,11 @@ export default async function Dashboard({
                 className={buttonClass("quiet")}
               >
                 Start {p.name}
+              </Link>
+            ))}
+            {activePrograms().map((p) => (
+              <Link key={p.slug} href={p.href(org.id)} className={buttonClass("quiet")}>
+                {p.name}
               </Link>
             ))}
           </div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PRODUCTS } from "@/products";
+import { activePrograms } from "@/programs";
 import { formatUsd, formatUsdCents } from "@/core/money";
 import { form990Labor, PRICING, TYPICAL_990 } from "@/products/form-990";
 import { LABOR_PLEDGE, pledgeFor } from "@/core/pledge";
@@ -48,6 +49,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ j
             <p className="mt-2 text-sm">{p.tagline}</p>
             <p className="mt-3 text-sm font-bold">{FROM[p.slug]}</p>
             <p className="mt-1 text-xs text-muted">Signed by: {p.reviewerCredentials.join(", ")}</p>
+          </Card>
+        ))}
+        {activePrograms().map((p) => (
+          <Card key={p.slug} title={`${p.line}${p.status === "beta" ? " (beta)" : ""}`}>
+            <h2 className="text-2xl">{p.name}</h2>
+            <p className="mt-2 text-sm">{p.tagline}</p>
+            <p className="mt-3 text-sm font-bold">Open it from your organization page</p>
+            <p className="mt-1 text-xs text-muted">Signed by: {p.signedBy}</p>
           </Card>
         ))}
       </div>
