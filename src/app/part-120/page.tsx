@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requestPart120AccessAction } from "@/app/p120/actions";
+import Link from "next/link";
+import { siteIsOpen } from "@/core/services/auth";
 import { part120Enabled } from "@/programs/part-120/service";
-import { Button, Card, inputClass, Notice, PageTitle, Shell } from "@/ui/components";
+import { Button, buttonClass, Card, inputClass, Notice, PageTitle, Shell } from "@/ui/components";
 import { currentActor } from "@/ui/session";
 
 export const metadata: Metadata = {
   title: "Part 120 Compliance Desk — easier.company",
-  description: "A compliance desk for FAA drug and alcohol testing programs under 14 CFR part 120. Beta, by invitation.",
+  description: "A compliance desk for FAA drug and alcohol testing programs under 14 CFR part 120. Beta.",
 };
 
 // The feature flag and the session are read per request; without this the page is fixed at build time.
@@ -36,9 +38,10 @@ export default async function Part120Page({ searchParams }: { searchParams: Prom
   if (!part120Enabled()) notFound();
   const actor = await currentActor();
   const { requested, error } = await searchParams;
+  const open = siteIsOpen();
   return (
     <Shell actor={actor}>
-      <PageTitle kicker="For Part 135 operators, air tour operators, and Part 145 repair stations · beta, by invitation">Part 120 Compliance Desk</PageTitle>
+      <PageTitle kicker={`For Part 135 operators, air tour operators, and Part 145 repair stations · beta${open ? "" : ", by invitation"}`}>Part 120 Compliance Desk</PageTitle>
       <p className="mb-6 max-w-[68ch] text-[17px]">
         Know where your FAA drug and alcohol testing program stands before an inspector asks. The desk works alongside your consortium or third-party administrator and keeps the
         employer&apos;s side of 14 CFR part 120 in one place.
@@ -62,14 +65,28 @@ export default async function Part120Page({ searchParams }: { searchParams: Prom
       </Card>
       <section id="access" className="mx-auto max-w-xl scroll-mt-6">
         <Notice error={error} success={requested ? "Request received. We will email you." : undefined} />
-        <Card title="Request access">
-          <p className="mb-4 text-sm">We are taking a small number of operators into the beta.</p>
+        {open && (
+          <Card title="Start">
+            <p className="mb-4 text-sm">
+              {actor
+                ? "Open the desk from your organization page. Your designated employer representative accepts the program terms at enrollment."
+                : "Create an account, add your organization, and open the desk from its page. Your designated employer representative accepts the program terms at enrollment."}
+            </p>
+            <Link href={actor ? "/app" : "/signup"} className={buttonClass("primary")}>
+              {actor ? "Your organizations" : "Create an account"}
+            </Link>
+          </Card>
+        )}
+        <Card title={open ? "Questions first?" : "Request access"}>
+          <p className="mb-4 text-sm">{open ? "Leave your work email and we will write to you." : "We are taking a small number of operators into the beta."}</p>
           <form action={requestPart120AccessAction} className="space-y-4">
             <label className="block">
               <span className="mb-1 block text-sm font-bold">Work email</span>
               <input name="email" type="email" required autoComplete="email" className={inputClass} />
             </label>
-            <Button type="submit">Request access</Button>
+            <Button type="submit" variant={open ? "quiet" : undefined}>
+              {open ? "Email me" : "Request access"}
+            </Button>
           </form>
         </Card>
       </section>

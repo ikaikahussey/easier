@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createOrganizationAction } from "@/app/actions";
+import { acceptSiteTermsAction, createOrganizationAction } from "@/app/actions";
+import { productStatus } from "@/launch";
+import { TermsAcceptance } from "@/ui/terms-acceptance";
 import { listEngagements } from "@/core/services/engagements";
 import { listOrganizations } from "@/core/services/organizations";
 import { formatUsd } from "@/core/money";
@@ -18,7 +20,9 @@ export default async function Dashboard({
   if (actor.role !== "client") redirect("/review");
   const { error, welcome, verified, verification_sent } = await searchParams;
   const success = welcome
-    ? "Your account is ready. Add your organization below to get started."
+    ? actor.emailVerified === false
+      ? "Your account is ready. Confirm your email with the link we sent, then add your organization."
+      : "Your account is ready. Add your organization below to get started."
     : verified
       ? "Email confirmed."
       : verification_sent
@@ -54,15 +58,17 @@ export default async function Dashboard({
               ))}
           </ul>
           <div className="mt-4 flex flex-wrap gap-2">
-            {PRODUCTS.map((p) => (
-              <Link
-                key={p.slug}
-                href={`/app/orgs/${org.id}/new?product=${p.slug}`}
-                className={buttonClass("quiet")}
-              >
-                Start {p.name}
-              </Link>
-            ))}
+            {PRODUCTS.map((p) =>
+              productStatus(p).open ? (
+                <Link key={p.slug} href={`/app/orgs/${org.id}/new?product=${p.slug}`} className={buttonClass("quiet")}>
+                  Start {p.name}
+                </Link>
+              ) : (
+                <span key={p.slug} className="self-center text-sm text-muted">
+                  {p.name}: opening soon
+                </span>
+              ),
+            )}
             {activePrograms().map((p) => (
               <Link key={p.slug} href={p.href(org.id)} className={buttonClass("quiet")}>
                 {p.name}
@@ -72,6 +78,21 @@ export default async function Dashboard({
         </Card>
       ))}
 
+      {actor.termsAccepted === false && (
+        <Card title="Terms of service and privacy policy">
+          <p className="mb-4 text-sm">Accept the current terms before adding an organization.</p>
+          <form action={acceptSiteTermsAction} className="space-y-4">
+            <TermsAcceptance />
+            <Button type="submit">Accept</Button>
+          </form>
+        </Card>
+      )}
+
+      {actor.emailVerified === false || actor.termsAccepted === false ? (
+        <p className="text-sm text-muted">
+          {actor.emailVerified === false ? "Confirm your email address" : "Accept the terms"} to add {orgs.length ? "another" : "your"} organization.
+        </p>
+      ) : (
       <Card title={orgs.length ? "Add another organization" : "Add your organization"}>
         <form action={createOrganizationAction} className="grid gap-4 sm:grid-cols-3">
           <label className="block">
@@ -92,6 +113,7 @@ export default async function Dashboard({
           </div>
         </form>
       </Card>
+      )}
     </Shell>
   );
 }

@@ -14,6 +14,8 @@ export interface Actor {
   role: Role;
   /** False for a self-registered account that has not yet followed an emailed link. */
   emailVerified?: boolean;
+  /** False when the account has not accepted the current site terms and privacy policy. */
+  termsAccepted?: boolean;
   /** True when this session began with an emailed link, which proves control of the address. */
   viaLink?: boolean;
 }

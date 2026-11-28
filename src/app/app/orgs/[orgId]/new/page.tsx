@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { getOrganization } from "@/core/services/organizations";
 import { PRODUCTS } from "@/products";
-import { Shell } from "@/ui/components";
+import { Notice, Shell } from "@/ui/components";
+import { productStatus } from "@/launch";
 import { IntakeForm } from "@/ui/intake-form";
 import { requireActor } from "@/ui/session";
 
@@ -24,7 +25,11 @@ export default async function NewEngagement({
       <p className="text-sm text-muted">{org.name}</p>
       <h1 className="mb-2 text-3xl font-semibold">{product.name}</h1>
       <p className="mb-6 max-w-2xl text-muted">{product.tagline}</p>
-      <IntakeForm orgId={org.id} product={product.slug} periodLabel={product.period.label} form={product.intake} />
+      {productStatus(product).open ? (
+        <IntakeForm orgId={org.id} product={product.slug} periodLabel={product.period.label} form={product.intake} />
+      ) : (
+        <Notice error={productStatus(product).reason} />
+      )}
     </Shell>
   );
 }

@@ -18,39 +18,53 @@ const root = path.resolve(import.meta.dirname, "..");
 const dbDir = mkdtempSync(path.join(tmpdir(), "easier-e2e-"));
 let log = "";
 
-const server = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", String(PORT)], {
-  cwd: root,
-  detached: true,
-  env: {
-    ...process.env,
-    NODE_ENV: "production",
-    PGLITE_DIR: dbDir,
-    DATABASE_URL: "",
-    ANTHROPIC_API_KEY: "",
-    MAIL_TRANSPORT: "log",
-    APP_URL: BASE,
-    REVIEWER_EMAILS: "rita@easier.company",
-    ADMIN_EMAILS: "ada@easier.company",
-    PREPARER_OF_RECORD: "Rita Reyes, EA",
-    ACCESS_EMAILS: "alice@a.org,bob@b.org,pw@a.org,signup@a.org",
-    SITE_ACCESS: "",
-    P120_ENABLED: "1",
-    SESSION_SECRET: "e2e-session-secret-0123456789abcdefghij",
-    DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
-  },
-});
-server.stdout.on("data", (d) => (log += d));
-server.stderr.on("data", (d) => (log += d));
+/** Starts the production build. `overrides` change the environment for a second phase on the same database. */
+function start(overrides = {}) {
+  const child = spawn(path.join(root, "node_modules/.bin/next"), ["start", "-p", String(PORT)], {
+    cwd: root,
+    detached: true,
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+      PGLITE_DIR: dbDir,
+      DATABASE_URL: "",
+      ANTHROPIC_API_KEY: "",
+      MAIL_TRANSPORT: "log",
+      APP_URL: BASE,
+      REVIEWER_EMAILS: "rita@easier.company",
+      ADMIN_EMAILS: "ada@easier.company",
+      PREPARER_OF_RECORD: "Rita Reyes, EA",
+      ACCESS_EMAILS: "alice@a.org,bob@b.org,pw@a.org,signup@a.org",
+      SITE_ACCESS: "",
+      P120_ENABLED: "1",
+      CONTACT_EMAIL: "hello@easier.company",
+      SESSION_SECRET: "e2e-session-secret-0123456789abcdefghij",
+      DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+      ...overrides,
+    },
+  });
+  child.stdout.on("data", (d) => (log += d));
+  child.stderr.on("data", (d) => (log += d));
+  return child;
+}
+let server = start();
+
+async function ready() {
+  for (let i = 0; i < 60 && !log.includes("Ready"); i++) await sleep(500);
+  assert.ok(log.includes("Ready"), `server did not start:\n${log}`);
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class Browser {
   cookie = "";
+  /** Stands in for the address the hosting platform reports for the visitor. */
+  address = "";
   async request(url, init = {}) {
     const res = await fetch(new URL(url, BASE), {
       ...init,
       redirect: "manual",
-      headers: { ...(init.headers ?? {}), cookie: this.cookie, origin: BASE },
+      headers: { ...(init.headers ?? {}), cookie: this.cookie, origin: BASE, ...(this.address ? { "x-forwarded-for": this.address } : {}) },
     });
     const set = res.headers.get("set-cookie");
     if (set) {
@@ -114,6 +128,8 @@ class Browser {
 const linkForm = (f) => !!f.querySelector("input[name=email]") && !f.querySelector("input[name=password]");
 const passwordForm = (f) => !!f.querySelector("input[name=password]") && !f.querySelector("input[name=confirm]");
 
+const termsForm = (f) => !!f.querySelector("input[name=termsHash]") && !f.querySelector("input[name=confirm]");
+
 /** First sign-in goes through the emailed link; a user with no password lands on the set-password page. */
 async function signIn(email) {
   const b = new Browser();
@@ -133,6 +149,17 @@ async function signIn(email) {
     assert.ok(home, "setup page has no skip link");
     after = await b.get(home);
   }
+  // An account created by an emailed link has not seen the site terms: accept them, as the page asks.
+  if (/\/app/.test(after.url) && after.doc.querySelector("input[name=termsHash]")) {
+    assert.ok(!after.doc.querySelector("input[name=ein]"), "organization form offered before the terms were accepted");
+    const refused = await b.submit(after, termsForm, { accept: false });
+    assert.match(text(refused), /Check the box to accept/);
+    const url = after.url;
+    await b.submit(after, termsForm, { accept: true });
+    after = await b.get(url);
+    assert.ok(!after.doc.querySelector("input[name=termsHash]"), "terms still requested after acceptance");
+    assert.ok(after.doc.querySelector("input[name=ein]"), "organization form missing after the terms were accepted");
+  }
   return { b, landing: after };
 }
 
@@ -140,8 +167,7 @@ const fixture = (n) => readFileSync(path.join(root, "tests/fixtures", n), "utf8"
 const text = (page) => page.doc.text.replace(/\s+/g, " ");
 
 async function main() {
-  for (let i = 0; i < 60 && !log.includes("Ready"); i++) await sleep(500);
-  assert.ok(log.includes("Ready"), `server did not start:\n${log}`);
+  await ready();
 
   // Public teaser: headline and waitlist only; everything else needs a sign-in.
   const anon = new Browser();
@@ -163,6 +189,15 @@ async function main() {
   assert.equal(home.headers.get("x-frame-options"), "DENY");
   assert.match(home.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   for (const p of ["/labor-pledge", "/app", "/review"]) assert.match((await anon.get(p)).url, /\/login$/, `${p} is not gated`);
+  // The terms and privacy policy are public in every mode, name the contact address, and are linked from the footer.
+  for (const [p, title] of [["/terms", "Terms of service"], ["/privacy", "Privacy policy"]]) {
+    const doc = await anon.get(p);
+    assert.equal(doc.status, 200);
+    assert.match(text(doc), new RegExp(`${title}.*hello@easier\\.company`));
+    assert.ok(home.doc.querySelector(`footer a[href="${p}"]`), `${p} not linked from the footer`);
+  }
+  assert.match(await (await anon.request("/robots.txt")).text(), /Disallow: \/app/);
+  assert.match(text(await anon.get("/signup")), /Invitation only until launch/);
 
   const joined = await anon.submit(home, (f) => !!f.querySelector("select[name=kind]"), { email: "Owner@Shop.com", kind: "small_business" });
   assert.match(text(joined), /You're on the list/);
@@ -219,29 +254,37 @@ async function main() {
     const signupForm = (f) => !!f.querySelector("input[name=name]") && !!f.querySelector("input[name=confirm]");
     const nb = new Browser();
     const page = await nb.get("/signup");
-    const mismatch = await nb.submit(page, signupForm, { name: "Sam", email: "signup@a.org", password: "a signup passphrase", confirm: "nope" });
+    const mismatch = await nb.submit(page, signupForm, { name: "Sam", email: "signup@a.org", password: "a signup passphrase", confirm: "nope", accept: true });
     assert.match(text(mismatch), /Passwords do not match/);
     // Uninvited: generic message, no session.
-    const uninvited = await nb.submit(page, signupForm, { name: "X", email: "uninvited@a.org", password: "a signup passphrase", confirm: "a signup passphrase" });
+    const uninvited = await nb.submit(page, signupForm, { name: "X", email: "uninvited@a.org", password: "a signup passphrase", confirm: "a signup passphrase", accept: true });
     assert.match(text(uninvited), /could not create an account/);
     assert.ok(!nb.cookie.startsWith("ec_session="), "uninvited sign-up got a session");
+    // The terms box must be checked.
+    const unaccepted = await nb.submit(page, signupForm, { name: "Sam Signup", email: "Signup@A.org", password: "a signup passphrase", confirm: "a signup passphrase", accept: false });
+    assert.match(text(unaccepted), /Accept the terms of service and privacy policy/);
+    assert.ok(!nb.cookie.startsWith("ec_session="), "sign-up without the terms got a session");
     const before = log.length;
-    const created = await nb.submit(page, signupForm, { name: "Sam Signup", email: "Signup@A.org", password: "a signup passphrase", confirm: "a signup passphrase" });
+    const created = await nb.submit(page, signupForm, { name: "Sam Signup", email: "Signup@A.org", password: "a signup passphrase", confirm: "a signup passphrase", accept: true });
     assert.match(created.url, /\/app\?welcome=1$/);
     assert.match(text(created), /Your account is ready/);
     assert.match(text(created), /Confirm your email/);
+    assert.ok(!created.doc.querySelector("input[name=ein]"), "organization form offered before the email was confirmed");
     await sleep(200);
     const link = log.slice(before).match(/Sign-in link for signup@a\.org: (\S+)/)?.[1];
     assert.ok(link, "verification link was not logged");
     // Duplicate sign-up is refused generically; the password still works.
-    const dup = await new Browser().submit(await new Browser().get("/signup"), signupForm, { name: "Z", email: "signup@a.org", password: "another passphrase!", confirm: "another passphrase!" });
+    const dup = await new Browser().submit(await new Browser().get("/signup"), signupForm, { name: "Z", email: "signup@a.org", password: "another passphrase!", confirm: "another passphrase!", accept: true });
     assert.match(text(dup), /could not create an account/);
     const again = new Browser();
     assert.match((await again.submit(await again.get("/login"), passwordForm, { email: "signup@a.org", password: "a signup passphrase" })).url, /\/app$/);
     // Following the link confirms the address and clears the banner.
     const verified = await again.submit(await again.get(link), (f) => !!f.querySelector("input[name=token]"));
     assert.match(text(verified), /Email confirmed/);
-    assert.doesNotMatch(text(await again.get("/app")), /Confirm your email/);
+    const confirmed = await again.get("/app");
+    assert.doesNotMatch(text(confirmed), /Confirm your email/);
+    assert.ok(confirmed.doc.querySelector("input[name=ein]"), "organization form missing after confirmation");
+    assert.ok(!confirmed.doc.querySelector("input[name=termsHash]"), "terms requested again after sign-up accepted them");
   }
 
   // Client A: organization, intake, upload, submit
@@ -553,7 +596,97 @@ async function main() {
     assert.match(text(badAsk), /Enter a valid email address/);
   }
 
+  await openToThePublic();
   console.log("E2E passed");
+}
+
+/** Second phase: the same database with SITE_ACCESS=open and no preparer of record named. */
+async function openToThePublic() {
+  process.kill(-server.pid, "SIGKILL");
+  await sleep(500);
+  log = "";
+  server = start({ SITE_ACCESS: "open", PREPARER_OF_RECORD: "", ACCESS_EMAILS: "" });
+  await ready();
+  const signupForm = (f) => !!f.querySelector("input[name=name]") && !!f.querySelector("input[name=confirm]");
+
+  // The public page replaces the teaser: prices, what is open, and a way in.
+  const anon = new Browser();
+  const home = await anon.get("/");
+  assert.equal(home.status, 200);
+  assert.doesNotMatch(text(home), /Coming soon/);
+  assert.match(text(home), /Form 990-EZ \$[\d,]+/);
+  assert.match(text(home), /Easier Tax.*Opening soon\. We take engagements once the licensed professional who signs the work is named\./);
+  assert.match(text(home), /Easier Compliance \(beta\).*Part 120 Compliance Desk/);
+  assert.ok(home.doc.querySelector('a.btn[href="/signup"]'), "no create-account button on the public page");
+  assert.ok(home.doc.querySelector('a[href="/part-120"]'), "Part 120 page not linked");
+  for (const el of home.doc.querySelectorAll(".btn")) assert.ok(el.getAttribute("href") || el.tagName === "BUTTON", "inert .btn");
+  assert.equal((await anon.get("/labor-pledge")).status, 200);
+  assert.match((await anon.get("/labor-pledge")).url, /\/labor-pledge$/);
+  for (const p of ["/app", "/review", "/admin"]) assert.match((await anon.get(p)).url, /\/login$/, `${p} is not gated`);
+  assert.doesNotMatch(text(await anon.get("/signup")), /Invitation only/);
+  assert.doesNotMatch(text(await anon.get("/login")), /Invitation only/);
+  assert.match(text(await anon.submit(home, (f) => !!f.querySelector("select[name=kind]"), { email: "later@shop.com", kind: "small_business" })), /You're on the list/);
+  const operators = await anon.get("/part-120");
+  assert.doesNotMatch(text(operators), /by invitation/);
+  assert.ok(operators.doc.querySelector('a.btn[href="/signup"]'), "operator page has no way to start");
+
+  // Anyone can register. Nothing can be stored until the address is confirmed.
+  const pat = new Browser();
+  pat.address = "198.51.100.7";
+  const before = log.length;
+  const created = await pat.submit(await pat.get("/signup"), signupForm, {
+    name: "Pat Public",
+    email: "pat@public.example",
+    password: "a public passphrase",
+    confirm: "a public passphrase",
+    accept: true,
+  });
+  assert.match(created.url, /\/app\?welcome=1$/);
+  assert.match(text(created), /Confirm your email with the link we sent/);
+  assert.ok(!created.doc.querySelector("input[name=ein]"), "organization form offered before the email was confirmed");
+  await sleep(200);
+  const link = log.slice(before).match(/Sign-in link for pat@public\.example: (\S+)/)?.[1];
+  assert.ok(link, "verification link was not logged");
+  await pat.submit(await pat.get(link), (f) => !!f.querySelector("input[name=token]"));
+  let app = await pat.get("/app");
+  assert.ok(app.doc.querySelector("input[name=ein]"), "organization form missing after confirmation");
+  app = await pat.submit(app, (f) => !!f.querySelector("input[name=ein]"), { name: "Public Aviation LLC" });
+  assert.match(text(app), /Public Aviation LLC/);
+  // Tax and Books have no preparer: no start link, and the intake page explains instead of taking data.
+  assert.match(text(app), /Form 990 preparation: opening soon|opening soon/);
+  assert.ok(!app.doc.querySelectorAll("a").some((a) => /\/new\?product=/.test(a.getAttribute("href") ?? "")), "start link shown for a closed line");
+  const desk = app.doc.querySelectorAll("a").find((a) => /^\/p120\//.test(a.getAttribute("href") ?? ""));
+  assert.ok(desk, "open line (Part 120) not offered");
+  const orgId = desk.getAttribute("href").split("/")[2];
+  const closed = await pat.get(`/app/orgs/${orgId}/new?product=form-990`);
+  assert.match(text(closed), /Opening soon/);
+  assert.ok(!closed.doc.querySelector("input[name=period]"), "intake form shown for a closed line");
+  assert.match(text(await pat.get(desk.getAttribute("href"))), /Start the program/);
+
+  // A walk-in by emailed link is confirmed already but must accept the terms (signIn asserts the gate).
+  const { landing } = await signIn("walkin@public.example");
+  assert.match(landing.url, /\/app/);
+
+  // The admin sees what still stands between this deployment and a clean launch.
+  const { b: ada } = await signIn("ada@easier.company");
+  const admin = await ada.get("/admin");
+  assert.match(text(admin), /Launch readiness\s*Open to the public/);
+  assert.match(text(admin), /Email delivery\s*Blocks launch\s*MAIL_TRANSPORT=log/);
+  assert.match(text(admin), /Preparer of record \(Tax, Books\)\s*Open item/);
+  assert.match(text(admin), /Legal text reviewed by counsel\s*Open item\s*Still marked draft: Terms of service, Privacy policy/);
+
+  // Sign-up is limited per network address.
+  const flood = new Browser();
+  flood.address = "198.51.100.99";
+  const page = await flood.get("/signup");
+  let last;
+  for (let i = 0; i < 11; i++) {
+    const b = new Browser();
+    b.address = flood.address;
+    last = await b.submit(page, signupForm, { name: "F", email: `flood${i}@public.example`, password: "a flood passphrase", confirm: "a flood passphrase", accept: true });
+    if (i < 10) assert.match(last.url, /\/app\?welcome=1$/, `sign-up ${i} was refused`);
+  }
+  assert.match(text(last), /Too many requests from this network/);
 }
 
 const stop = (code) => {

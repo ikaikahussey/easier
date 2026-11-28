@@ -1,7 +1,9 @@
-import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { and, count, eq, gt, isNull, lt } from "drizzle-orm";
 import { hashPassword, randomToken, sha256, sign, verify, verifyPassword } from "../crypto";
 import { withSystem } from "../db/client";
-import { loginAttempts, loginTokens, users, waitlist } from "../db/schema";
+import { loginAttempts, loginTokens, throttleEvents, users, waitlist } from "../db/schema";
+import { siteAccessOpen } from "../launch";
+import { siteTerms } from "../site-terms";
 import type { Role } from "../workflow";
 import { ValidationError, type Actor } from "./context";
 
@@ -29,7 +31,43 @@ function configuredRole(email: string): Role | undefined {
  * Before launch, sign-in is invite-only (SITE_ACCESS=invite, the default): staff, emails in
  * ACCESS_EMAILS, and existing users. Set SITE_ACCESS=open at launch.
  */
-export const siteIsOpen = () => process.env.SITE_ACCESS === "open";
+export const siteIsOpen = () => siteAccessOpen();
+
+type UserRow = typeof users.$inferSelect;
+
+/** Whether this account has accepted the site terms and privacy policy as they read today. */
+const termsCurrent = (u: Pick<UserRow, "termsHash">) => u.termsHash === siteTerms().hash;
+
+const toActor = (u: UserRow, role: Role = u.role as Role, emailVerified = !!u.emailVerifiedAt): Actor => ({
+  id: u.id,
+  email: u.email,
+  role,
+  emailVerified,
+  termsAccepted: termsCurrent(u),
+});
+
+// ── Abuse throttle ───────────────────────────────────────────────────────────
+
+const THROTTLE_RETENTION_MS = 24 * 3600_000;
+
+/**
+ * Counts a request against `key` and throws once more than `max` have arrived within
+ * `windowMs`. Keys carry a hash of the caller's network address, never the address. Rows
+ * older than a day are removed as new ones arrive.
+ */
+export async function throttle(key: string, max: number, windowMs: number): Promise<void> {
+  await withSystem(async (tx) => {
+    await tx.delete(throttleEvents).where(lt(throttleEvents.createdAt, new Date(Date.now() - THROTTLE_RETENTION_MS)));
+    const [{ n }] = (await tx
+      .select({ n: count() })
+      .from(throttleEvents)
+      .where(and(eq(throttleEvents.key, key), gt(throttleEvents.createdAt, new Date(Date.now() - windowMs))))) as [{ n: number }];
+    if (n >= max) throw new ValidationError(["Too many requests from this network; try again later"]);
+    await tx.insert(throttleEvents).values({ key });
+  });
+}
+
+export const throttleKey = (purpose: string, address: string) => `${purpose}:${sha256(address)}`;
 
 export type WaitlistKind = (typeof waitlist.$inferInsert)["kind"];
 
@@ -88,13 +126,13 @@ export async function consumeLogin(token: string): Promise<Actor | undefined> {
       if (role && existing.role !== role) patch.role = role;
       if (!existing.emailVerifiedAt) patch.emailVerifiedAt = new Date();
       if (Object.keys(patch).length) await tx.update(users).set(patch).where(eq(users.id, existing.id));
-      return { id: existing.id, email: existing.email, role: role ?? (existing.role as Role), emailVerified: true };
+      return toActor(existing, role ?? (existing.role as Role), true);
     }
     const [created] = await tx
       .insert(users)
       .values({ email: row.email, role: role ?? "client", emailVerifiedAt: new Date() })
       .returning();
-    return { id: created!.id, email: created!.email, role: created!.role as Role, emailVerified: true };
+    return toActor(created!, created!.role as Role, true);
   });
 }
 
@@ -103,13 +141,22 @@ export async function consumeLogin(token: string): Promise<Actor | undefined> {
  * account created, when the email already has an account or has no pre-launch access (it joins
  * the waitlist), so the response does not say which. The returned token is a verification link.
  */
-export async function signUp(rawEmail: string, password: string, rawName?: string): Promise<{ actor: Actor; token: string } | undefined> {
+export async function signUp(
+  rawEmail: string,
+  password: string,
+  rawName: string | undefined,
+  /** Hash of the terms and privacy policy the sign-up form displayed. */
+  acceptedTermsHash: string | undefined,
+): Promise<{ actor: Actor; token: string } | undefined> {
   const email = normalizeEmail(rawEmail);
   const name = (rawName ?? "").trim().slice(0, MAX_NAME_LENGTH) || null;
   const issues: string[] = [];
   if (!EMAIL.test(email)) issues.push("Enter a valid email address");
   if (password.length < MIN_PASSWORD_LENGTH) issues.push(`Use at least ${MIN_PASSWORD_LENGTH} characters`);
   if (password.length > MAX_PASSWORD_LENGTH) issues.push(`Use at most ${MAX_PASSWORD_LENGTH} characters`);
+  const terms = siteTerms();
+  if (!acceptedTermsHash) issues.push("Accept the terms of service and privacy policy to create an account");
+  else if (acceptedTermsHash !== terms.hash) issues.push("The terms changed after you opened this page. Reload and read them again");
   if (issues.length) throw new ValidationError(issues);
   const passwordHash = hashPassword(password);
   const token = randomToken();
@@ -121,10 +168,22 @@ export async function signUp(rawEmail: string, password: string, rawName?: strin
       return undefined;
     }
     const role = configuredRole(email) ?? "client";
-    const [created] = await tx.insert(users).values({ email, name, role, passwordHash, passwordSetAt: new Date() }).returning();
+    const [created] = await tx
+      .insert(users)
+      .values({ email, name, role, passwordHash, passwordSetAt: new Date(), termsVersion: terms.version, termsHash: terms.hash, termsAcceptedAt: new Date() })
+      .returning();
     await tx.insert(loginTokens).values({ tokenHash: sha256(token), email, expiresAt: new Date(Date.now() + TOKEN_TTL_MS) });
-    return { actor: { id: created!.id, email, role, emailVerified: false }, token };
+    return { actor: toActor(created!, role, false), token };
   });
+}
+
+/** Records the signed-in user's acceptance of the site terms and privacy policy shown to them. */
+export async function acceptSiteTerms(userId: string, shownHash: string): Promise<void> {
+  const terms = siteTerms();
+  if (shownHash !== terms.hash) throw new ValidationError(["The terms changed after you opened this page. Reload and read them again"]);
+  await withSystem((tx) =>
+    tx.update(users).set({ termsVersion: terms.version, termsHash: terms.hash, termsAcceptedAt: new Date() }).where(eq(users.id, userId)),
+  );
 }
 
 // ── Password sign-in ─────────────────────────────────────────────────────────
@@ -183,7 +242,7 @@ export async function loginWithPassword(rawEmail: string, password: string): Pro
     if (!ok || !u) return undefined;
     const role = configuredRole(u.email);
     if (role && u.role !== role) await tx.update(users).set({ role }).where(eq(users.id, u.id));
-    return { id: u.id, email: u.email, role: role ?? (u.role as Role), emailVerified: !!u.emailVerifiedAt };
+    return toActor(u, role ?? (u.role as Role));
   });
 }
 
@@ -198,7 +257,7 @@ export async function requestVerification(userId: string): Promise<{ email: stri
 export async function getActor(userId: string): Promise<Actor | undefined> {
   return withSystem(async (tx) => {
     const [u] = await tx.select().from(users).where(eq(users.id, userId));
-    return u ? { id: u.id, email: u.email, role: u.role as Role, emailVerified: !!u.emailVerifiedAt } : undefined;
+    return u ? toActor(u) : undefined;
   });
 }
 

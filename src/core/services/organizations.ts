@@ -32,6 +32,10 @@ export async function createOrganization(
   input: { name: string; ein?: string; website?: string },
 ): Promise<OrganizationView> {
   if (isStaff(actor)) throw new ForbiddenError("Staff accounts cannot own client organizations");
+  // Onboarding gate: a confirmed address (so open sign-up cannot be used to store data or spend
+  // on AI anonymously) and the current site terms.
+  if (actor.emailVerified === false) throw new ForbiddenError("Confirm your email address before adding an organization");
+  if (actor.termsAccepted === false) throw new ForbiddenError("Accept the terms of service and privacy policy before adding an organization");
   const name = input.name.trim();
   if (!name) throw new ValidationError(["Organization name is required"]);
   let ein: string | undefined;

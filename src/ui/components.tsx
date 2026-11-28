@@ -8,6 +8,7 @@ import type { Finding } from "@/core/rules";
 import type { Status } from "@/core/workflow";
 import type { Filing } from "@/core/db/schema";
 import type { Actor } from "@/core/services/context";
+import { siteAccessOpen } from "@/core/launch";
 import { logoutAction, resendVerificationAction } from "@/app/actions";
 
 /**
@@ -16,6 +17,7 @@ import { logoutAction, resendVerificationAction } from "@/app/actions";
  */
 export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNode; children: ReactNode }) {
   const staff = actor && actor.role !== "client";
+  const open = siteAccessOpen();
   return (
     <div className="min-h-screen">
       <header className="no-print mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-5">
@@ -51,9 +53,21 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
               </form>
             </>
           ) : (
-            <Link href="/login" className={buttonClass("quiet")}>
-              Sign in
-            </Link>
+            <>
+              {open && (
+                <>
+                  <Link href="/labor-pledge" className="nav-link">
+                    Labor Pledge
+                  </Link>
+                  <Link href="/signup" className="nav-link">
+                    Create account
+                  </Link>
+                </>
+              )}
+              <Link href="/login" className={buttonClass("quiet")}>
+                Sign in
+              </Link>
+            </>
           )}
         </nav>
       </header>
@@ -62,7 +76,7 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
         {actor && actor.emailVerified === false && (
           <div role="status" className="mb-6 flex flex-wrap items-center justify-between gap-3 border-l-8 border-ok bg-accent-soft px-4 py-3 text-sm">
             <span>
-              <b>Confirm your email.</b> We sent a link to {actor.email}. Following it confirms this address and keeps account recovery working.
+              <b>Confirm your email.</b> We sent a link to {actor.email}. Follow it before adding an organization; it also keeps account recovery working.
             </span>
             <form action={resendVerificationAction}>
               <button className={buttonClass("quiet")}>Resend link</button>
@@ -71,16 +85,22 @@ export function Shell({ actor, hero, children }: { actor?: Actor; hero?: ReactNo
         )}
         {children}
       </main>
-      {actor && (
-        <footer className="no-print mx-auto flex max-w-6xl flex-wrap gap-x-6 gap-y-2 px-4 py-6">
-          <Link href="/" className="nav-link">
-            Home
-          </Link>
+      <footer className="no-print mx-auto flex max-w-6xl flex-wrap gap-x-6 gap-y-2 px-4 py-6">
+        <Link href="/" className="nav-link">
+          Home
+        </Link>
+        {(actor || open) && (
           <Link href="/labor-pledge" className="nav-link">
             Labor Pledge
           </Link>
-        </footer>
-      )}
+        )}
+        <Link href="/terms" className="nav-link">
+          Terms
+        </Link>
+        <Link href="/privacy" className="nav-link">
+          Privacy
+        </Link>
+      </footer>
     </div>
   );
 }
