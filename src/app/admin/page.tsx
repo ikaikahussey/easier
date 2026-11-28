@@ -7,6 +7,8 @@ import { listReviewers } from "@/core/services/reviewers";
 import { STATUSES, type Status } from "@/core/workflow";
 import { Button, Card, Notice, PageTitle, Shell, StatusBadge, inputClass } from "@/ui/components";
 import { requireAdmin } from "@/ui/session";
+import { siteIsOpen } from "@/core/services/auth";
+import { readiness } from "@/launch";
 
 /** The pilot gate: a full Form 990 must take a reviewer under this many hours. */
 const GATE_HOURS = 6;
@@ -20,11 +22,46 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const full990 = m.signed.find((s) => s.tier === "Form 990");
   const pledgeAccrued = m.rows.filter((r) => SIGNED.includes(r.status)).reduce((t, r) => t + r.pledgeCents, 0);
   const today = new Date().toISOString().slice(0, 10);
+  const launch = readiness();
+  const open = siteIsOpen();
 
   return (
     <Shell actor={actor}>
       <PageTitle kicker="Pilot operations">Admin</PageTitle>
       <Notice error={error} />
+
+      <Card
+        title="Launch readiness"
+        aside={open ? "Open to the public" : "Invitation only"}
+      >
+        <p className="mb-3 text-sm">
+          {launch.blockers.length
+            ? `${launch.blockers.length} item(s) must be fixed before SITE_ACCESS=open; a production build refuses to open until they are.`
+            : open
+              ? "No blocking items."
+              : "No blocking items. Set SITE_ACCESS=open and redeploy to open sign-up to the public."}
+        </p>
+        <table className="data-table w-full text-sm">
+          <thead>
+            <tr className="text-left">
+              <th>Check</th>
+              <th>Status</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {launch.checks.map((c) => (
+              <tr key={c.id}>
+                <td className="font-bold">{c.label}</td>
+                <td className={c.ok ? "text-ok" : c.blocking ? "font-bold text-danger" : "text-warn"}>
+                  {c.ok ? "Ready" : c.blocking ? "Blocks launch" : "Open item"}
+                </td>
+                <td>{c.detail}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
 
       <Card title="Pilot gate">
         <dl className="grid gap-4 text-sm sm:grid-cols-4">

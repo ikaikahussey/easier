@@ -8,6 +8,8 @@ import { BOOKS_MONTHLY_PRICE } from "@/products/books";
 import { joinWaitlistAction } from "@/app/actions";
 import { Button, buttonClass, Card, inputClass, Notice, Shell } from "@/ui/components";
 import { currentActor } from "@/ui/session";
+import { siteIsOpen } from "@/core/services/auth";
+import { productStatus } from "@/launch";
 
 const FROM: Record<string, string> = {
   "form-990": `From ${formatUsd(PRICING["990-N"])}. Form 990-EZ ${formatUsd(PRICING["990-EZ"])}. Form 990 ${formatUsd(PRICING["990"])}.`,
@@ -19,8 +21,11 @@ const RATE = `${Math.round(LABOR_PLEDGE.rate * 1000) / 10}%`;
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ joined?: string; error?: string }> }) {
   const actor = await currentActor();
-  if (!actor) return <Teaser {...await searchParams} />;
-  const start = "/app";
+  const { joined, error } = await searchParams;
+  // Before launch the public sees the teaser. Once the site is open, visitors and signed-in users see the same page.
+  if (!actor && !siteIsOpen()) return <Teaser joined={joined} error={error} />;
+  const start = actor ? "/app" : "/signup";
+  const anyProductOpen = PRODUCTS.some((p) => productStatus(p).open);
   const hero = (
     <section className="mx-auto max-w-6xl px-4 pb-12 pt-6 sm:pt-10" aria-labelledby="hero">
       <Headline />
@@ -31,7 +36,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ j
       </p>
       <div className="mt-7 flex flex-wrap items-center gap-5">
         <Link href={start} className={buttonClass("primary")}>
-          Start your return
+          {actor ? (anyProductOpen ? "Start your return" : "Your organizations") : "Create an account"}
         </Link>
         <Link href="/labor-pledge" className="nav-link underline!">
           Read the Labor Pledge
@@ -43,19 +48,25 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ j
   return (
     <Shell actor={actor} hero={hero}>
       <div className="grid gap-x-6 md:grid-cols-2">
-        {PRODUCTS.map((p) => (
-          <Card key={p.slug} title={`${p.line}${p.status === "beta" ? " (beta)" : ""}`}>
-            <h2 className="text-2xl">{p.name}</h2>
-            <p className="mt-2 text-sm">{p.tagline}</p>
-            <p className="mt-3 text-sm font-bold">{FROM[p.slug]}</p>
-            <p className="mt-1 text-xs text-muted">Signed by: {p.reviewerCredentials.join(", ")}</p>
-          </Card>
-        ))}
+        {PRODUCTS.map((p) => {
+          const status = productStatus(p);
+          return (
+            <Card key={p.slug} title={`${p.line}${p.status === "beta" ? " (beta)" : ""}`}>
+              <h2 className="text-2xl">{p.name}</h2>
+              <p className="mt-2 text-sm">{p.tagline}</p>
+              <p className="mt-3 text-sm font-bold">{FROM[p.slug]}</p>
+              <p className="mt-1 text-xs text-muted">Signed by: {p.reviewerCredentials.join(", ")}</p>
+              {!status.open && <p className="mt-3 border-l-4 border-shadow bg-accent-soft px-3 py-2 text-sm">{status.reason}</p>}
+            </Card>
+          );
+        })}
         {activePrograms().map((p) => (
           <Card key={p.slug} title={`${p.line}${p.status === "beta" ? " (beta)" : ""}`}>
             <h2 className="text-2xl">{p.name}</h2>
             <p className="mt-2 text-sm">{p.tagline}</p>
-            <p className="mt-3 text-sm font-bold">Open it from your organization page</p>
+            <p className="mt-3 text-sm font-bold">
+              {actor ? "Open it from your organization page" : <Link href="/part-120">What the desk does</Link>}
+            </p>
             <p className="mt-1 text-xs text-muted">Signed by: {p.signedBy}</p>
           </Card>
         ))}
@@ -93,9 +104,37 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ j
           </li>
         </ol>
       </Card>
+
+      {!actor && (
+        <section id="waitlist" className="mx-auto mt-10 max-w-xl scroll-mt-6">
+          <Notice error={error} success={joined ? "You're on the list. We'll email you." : undefined} />
+          <Card title="Not ready to start?">
+            <p className="mb-4 text-sm">Leave your email and we will write when a service you are waiting for opens.</p>
+            <WaitlistForm />
+          </Card>
+        </section>
+      )}
     </Shell>
   );
 }
+
+const WaitlistForm = () => (
+  <form action={joinWaitlistAction} className="space-y-4">
+    <label className="block">
+      <span className="mb-1 block text-sm font-bold">Email</span>
+      <input name="email" type="email" required autoComplete="email" className={inputClass} />
+    </label>
+    <label className="block">
+      <span className="mb-1 block text-sm font-bold">I run a</span>
+      <select name="kind" className={inputClass} defaultValue="nonprofit">
+        <option value="nonprofit">Nonprofit</option>
+        <option value="small_business">Small business</option>
+        <option value="other">Something else</option>
+      </select>
+    </label>
+    <Button type="submit">Join the waitlist</Button>
+  </form>
+);
 
 const Headline = () => (
   <h1 id="hero" className="display flat text-[clamp(2.2rem,7vw,5.5rem)]">
@@ -177,21 +216,7 @@ function Teaser({ joined, error }: { joined?: string; error?: string }) {
         <Notice error={error} success={joined ? "You're on the list. We'll email you when we open." : undefined} />
         <Card title="Join the waitlist">
           <p className="mb-4 text-sm">Get early access when we open, starting with nonprofits.</p>
-          <form action={joinWaitlistAction} className="space-y-4">
-            <label className="block">
-              <span className="mb-1 block text-sm font-bold">Email</span>
-              <input name="email" type="email" required autoComplete="email" className={inputClass} />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-bold">I run a</span>
-              <select name="kind" className={inputClass} defaultValue="nonprofit">
-                <option value="nonprofit">Nonprofit</option>
-                <option value="small_business">Small business</option>
-                <option value="other">Something else</option>
-              </select>
-            </label>
-            <Button type="submit">Join the waitlist</Button>
-          </form>
+          <WaitlistForm />
         </Card>
         <p className="text-sm">
           Have an invitation? <Link href="/login">Sign in</Link>

@@ -118,9 +118,22 @@ Isolation is enforced in independent layers:
 5. **Application controls.** Accounts are created at `/signup` with email (the username) and password; a confirmation link is emailed and the account shows a banner until it is followed. Sign-in is email and password (scrypt hashes, readable only by system code, lockout after 8 failures in 15 minutes). The emailed single-use, hashed, 15-minute link (consumed by POST so link scanners cannot burn it, rate limited) remains the fallback and the password-reset path: a session that began with a link may set a new password without the old one. Sessions are HMAC-signed, httpOnly cookies. Responses carry a strict CSP, `frame-ancestors 'none'`, HSTS, and `no-store` on client pages. Uploads are capped at 5 MB.
 6. **AI boundary.** A model call receives only the current engagement's data. Cached AI outputs live inside that engagement's encrypted draft.
 
-## Pre-launch access
+## Access and launch
 
-Until launch, the public sees only a teaser at `/` with a waitlist form. Everything else requires sign-in, and sign-in is invitation-only: staff (`ADMIN_EMAILS`, `REVIEWER_EMAILS`), emails in `ACCESS_EMAILS` (comma-separated), and existing users. Anyone else who requests a sign-in link is added to the waitlist and gets the same on-screen message, so the form does not reveal who has access. Waitlist rows live in the `waitlist` table, readable only by server code. Set `SITE_ACCESS=open` at launch to let anyone sign in.
+**Invitation only (default).** The public sees a teaser at `/` with a waitlist form, plus the terms and privacy policy. Everything else requires sign-in, and sign-in is limited to staff (`ADMIN_EMAILS`, `REVIEWER_EMAILS`), emails in `ACCESS_EMAILS` (comma-separated), and existing users. Anyone else who requests a sign-in link or signs up is added to the waitlist and gets the same on-screen message, so the form does not reveal who has access. Waitlist rows live in the `waitlist` table, readable only by server code.
+
+**Open to the public (`SITE_ACCESS=open`).** Anyone can create an account. `/` becomes the public page: each line with its price and whether it is taking customers, the Labor Pledge, and a create-account button. `/labor-pledge` is public, and `/part-120` invites operators to start instead of asking them to request access.
+
+What opening does not relax:
+
+- **A line only takes customers it can serve.** A product with engagement terms is closed until `PREPARER_OF_RECORD` names the licensed signer: the public page says "opening soon", the organization page offers no start link, and `createEngagement` refuses. A program follows its own switch (`P120_ENABLED`). See `src/core/launch.ts` and `src/launch.ts`.
+- **Nothing is stored for an unconfirmed address.** An account cannot add an organization until it has followed the emailed link, so open sign-up cannot be used to store data or spend on AI anonymously.
+- **Terms of service and privacy policy.** `/terms` and `/privacy` render `src/core/site-terms.ts`. Sign-up records the version and a SHA-256 hash of the text shown; the server refuses an acceptance whose hash differs from the current text. An account created by an emailed link, or one whose acceptance predates a change, accepts on its organizations page before it can add an organization. `CONTACT_EMAIL` is part of the text, so changing it asks for acceptance again. **Both documents are drafts for counsel**; governing law, dispute resolution, and the operator's legal name are not yet written.
+- **Throttles.** Sign-up, password sign-in, sign-in links, and waitlist forms are limited per network address (`throttle_events`, keyed by a hash of the address, kept one day), in addition to the per-email limits.
+
+**Preflight.** `npm run preflight` prints the launch checks. The Vercel build runs it first, and a production build with `SITE_ACCESS=open` fails while any blocking check fails, so the previous deployment stays live instead of the site opening half-configured. Blocking: database, encryption key, session secret, email delivery (`RESEND_API_KEY` set and `MAIL_TRANSPORT` not `log`), an https public address, `CONTACT_EMAIL`, an admin, and at least one open line. Reported but not blocking: preparer of record, counsel review of the legal text, pledge recipient, AI key. `/admin` shows the same list, including which documents are still marked draft.
+
+To open: fix every blocking item at `/admin`, set `SITE_ACCESS=open` in the production environment, and redeploy.
 
 ## Themes
 
@@ -147,11 +160,12 @@ npm run check      # typecheck → unit/integration tests → production build �
 - `tests/services.test.ts`: full lifecycle plus tenant isolation against real Postgres (PGlite) with RLS, and pilot operations (consents, credentials, review time, e-filing record, invoices, metrics).
 - `tests/part120.test.ts`: Part 120 rules: clearance gate, draw planning, event clocks, reports, retention, annual report, self-audit.
 - `tests/part120-services.test.ts`: Part 120 lifecycle against real Postgres (PGlite) with RLS, including denial to other tenants and to staff.
-- `scripts/e2e.mjs`: drives the production build through plain HTML forms (no JavaScript) for sign-in, intake, upload, engagement terms, AI draft, reviewer claim, reclassify, credential verification, approve, e-filing record, keying sheet, and invoice, plus cross-tenant 404s.
+- `tests/launch.test.ts`: launch checks, line availability, and the site terms hash.
+- `scripts/e2e.mjs`: drives the production build through plain HTML forms (no JavaScript) for sign-in, intake, upload, engagement terms, AI draft, reviewer claim, reclassify, credential verification, approve, e-filing record, keying sheet, and invoice, plus cross-tenant 404s. A second phase restarts the server with `SITE_ACCESS=open` and no preparer: the public page, sign-up through email confirmation and terms, closed lines, the readiness panel, and the sign-up throttle.
 
 ## Deploying (Vercel + Neon)
 
-Set the variables in `.env.example`. `DATABASE_URL`, `DATA_ENCRYPTION_KEY` (`openssl rand -base64 32`), `SESSION_SECRET`, and `RESEND_API_KEY` are required in production. The `vercel-build` script runs migrations before `next build`. The migration role must be able to `CREATE ROLE` (Neon's default owner can).
+Set the variables in `.env.example`. `DATABASE_URL`, `DATA_ENCRYPTION_KEY` (`openssl rand -base64 32`), `SESSION_SECRET`, and `RESEND_API_KEY` are required in production. The `vercel-build` script runs the launch preflight and migrations before `next build`. The migration role must be able to `CREATE ROLE` (Neon's default owner can).
 
 ## Not yet built
 

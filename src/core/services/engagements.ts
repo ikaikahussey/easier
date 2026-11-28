@@ -255,6 +255,9 @@ export async function createEngagement(
 ): Promise<string> {
   if (isStaff(actor)) throw new ForbiddenError("Engagements are opened by the client organization");
   const product = getProduct(input.product);
+  // A line with no named preparer cannot finish an engagement, so it does not start one.
+  if (product.consents.length && !configuredPreparer())
+    throw new WorkflowError(`${product.name} is not taking engagements yet: no preparer of record is named`);
   const period = formSchema([{ title: "", fields: [product.period] }]).safeParse({ period: input.period });
   if (!period.success) throw new ValidationError([`${product.period.label} is invalid`]);
   const intake = formSchema(product.intake).safeParse(input.intake);

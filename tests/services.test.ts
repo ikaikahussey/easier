@@ -26,7 +26,12 @@ import {
   requestVerification,
   setPassword,
   signUp,
+  acceptSiteTerms,
+  getActor,
+  throttle,
+  throttleKey,
 } from "@/core/services/auth";
+import { siteTerms } from "@/core/site-terms";
 import { addReviewTime, pilotMetrics, recordInvoice, startReviewTimer, stopReviewTimer } from "@/core/services/operations";
 import { getReviewerProfile, listReviewers, setCredentialVerified, submitCredential } from "@/core/services/reviewers";
 import { OrgVault, unwrapKey } from "@/core/crypto";
@@ -512,28 +517,80 @@ describe("authentication", () => {
   it("registers an account with email and password, verified by the emailed link", async () => {
     delete process.env.SITE_ACCESS;
     process.env.ACCESS_EMAILS = "new.client@x.org";
-    await expect(signUp("new.client@x.org", "short")).rejects.toThrow(/at least 12/);
+    const T = siteTerms().hash;
+    await expect(signUp("new.client@x.org", "short", undefined, T)).rejects.toThrow(/at least 12/);
+    // The terms must be accepted, and as they read now.
+    await expect(signUp("new.client@x.org", "a perfectly fine password", undefined, undefined)).rejects.toThrow(/Accept the terms/);
+    await expect(signUp("new.client@x.org", "a perfectly fine password", undefined, "0".repeat(64))).rejects.toThrow(/terms changed/);
     // No access: no account, generic result, waitlisted.
-    expect(await signUp("uninvited@x.org", "a perfectly fine password")).toBeUndefined();
+    expect(await signUp("uninvited@x.org", "a perfectly fine password", undefined, T)).toBeUndefined();
     expect(await loginWithPassword("uninvited@x.org", "a perfectly fine password")).toBeUndefined();
     const wl = await withSystem((tx) => tx.select().from(schema.waitlist).where(eq(schema.waitlist.email, "uninvited@x.org")));
     expect(wl).toHaveLength(1);
     // Invited: account created, signed in, unverified until the link is used.
-    const reg = (await signUp(" New.Client@X.org ", "a perfectly fine password", "  Pat Client  "))!;
-    expect(reg.actor).toMatchObject({ email: "new.client@x.org", role: "client", emailVerified: false });
+    const reg = (await signUp(" New.Client@X.org ", "a perfectly fine password", "  Pat Client  ", T))!;
+    expect(reg.actor).toMatchObject({ email: "new.client@x.org", role: "client", emailVerified: false, termsAccepted: true });
     expect(await loginWithPassword("new.client@x.org", "a perfectly fine password")).toMatchObject({ id: reg.actor.id, emailVerified: false });
     const [row] = await withSystem((tx) => tx.select().from(schema.users).where(eq(schema.users.id, reg.actor.id)));
     expect(row!.name).toBe("Pat Client");
     expect(row!.emailVerifiedAt).toBeNull();
+    expect(row).toMatchObject({ termsHash: T, termsVersion: siteTerms().version });
+    expect(row!.termsAcceptedAt).toBeInstanceOf(Date);
+    // An unconfirmed address cannot add an organization, so open sign-up cannot store data anonymously.
+    await expect(createOrganization(reg.actor, { name: "Too Soon" })).rejects.toThrow(/Confirm your email/);
     // Duplicate registration: refused generically, existing password untouched.
-    expect(await signUp("new.client@x.org", "another password entirely")).toBeUndefined();
+    expect(await signUp("new.client@x.org", "another password entirely", undefined, T)).toBeUndefined();
     expect(await loginWithPassword("new.client@x.org", "another password entirely")).toBeUndefined();
     // The verification link signs in and marks the address verified.
     expect(await consumeLogin(reg.token)).toMatchObject({ id: reg.actor.id, emailVerified: true });
     expect(await requestVerification(reg.actor.id)).toBeUndefined(); // already verified
+    expect((await createOrganization((await getActor(reg.actor.id))!, { name: "Confirmed Org" })).name).toBe("Confirmed Org");
     // A staff email registering gets its configured role.
     process.env.REVIEWER_EMAILS = "signup.reviewer@easier.company";
-    expect((await signUp("signup.reviewer@easier.company", "reviewer password here"))!.actor.role).toBe("reviewer");
+    expect((await signUp("signup.reviewer@easier.company", "reviewer password here", undefined, T))!.actor.role).toBe("reviewer");
+  });
+
+  it("requires the current site terms before an account created by an emailed link adds an organization", async () => {
+    process.env.SITE_ACCESS = "open";
+    const linked = (await consumeLogin((await requestLogin("walk.in@x.org"))!))!;
+    expect(linked).toMatchObject({ emailVerified: true, termsAccepted: false });
+    await expect(createOrganization(linked, { name: "No Terms" })).rejects.toThrow(/Accept the terms/);
+    await expect(acceptSiteTerms(linked.id, "0".repeat(64))).rejects.toThrow(/terms changed/);
+    await acceptSiteTerms(linked.id, siteTerms().hash);
+    const now = (await getActor(linked.id))!;
+    expect(now.termsAccepted).toBe(true);
+    expect((await createOrganization(now, { name: "With Terms" })).name).toBe("With Terms");
+    // Changing the text (here, the contact address it names) asks for acceptance again.
+    process.env.CONTACT_EMAIL = "hello@easier.company";
+    expect((await getActor(linked.id))!.termsAccepted).toBe(false);
+    delete process.env.CONTACT_EMAIL;
+    expect((await getActor(linked.id))!.termsAccepted).toBe(true);
+    delete process.env.SITE_ACCESS;
+  });
+
+  it("throttles public forms per network address without storing the address", async () => {
+    const key = throttleKey("signup", "203.0.113.9");
+    expect(key).not.toContain("203.0.113.9");
+    for (let i = 0; i < 3; i++) await throttle(key, 3, 3600_000);
+    await expect(throttle(key, 3, 3600_000)).rejects.toThrow(/Too many requests/);
+    await throttle(throttleKey("signup", "203.0.113.10"), 3, 3600_000); // another address is unaffected
+    await throttle(throttleKey("login", "203.0.113.9"), 3, 3600_000); // so is another form
+    // Rows older than a day are removed as new ones arrive.
+    await withSystem((tx) => tx.update(schema.throttleEvents).set({ createdAt: new Date(Date.now() - 25 * 3600_000) }).where(eq(schema.throttleEvents.key, key)));
+    await throttle(key, 3, 3600_000);
+    const rows = await withSystem((tx) => tx.select().from(schema.throttleEvents).where(eq(schema.throttleEvents.key, key)));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("app role cannot read the throttle table", async () => {
+    const err = await withTenant({ userId: alice.id, staff: true }, (tx) => tx.select().from(schema.throttleEvents)).catch((e: Error) => e);
+    expect(String((err as Error & { cause?: unknown }).cause)).toMatch(/permission denied/);
+  });
+
+  it("does not start an engagement on a line with no named preparer", async () => {
+    delete process.env.PREPARER_OF_RECORD;
+    await expect(createEngagement(alice, { orgId: orgA, product: "form-990", period: "2031-12-31", intake: intake990 })).rejects.toThrow(/not taking engagements yet/);
+    process.env.PREPARER_OF_RECORD = "Rita Reyes, EA";
   });
 
   it("lets a session that began with an emailed link reset the password without the current one", async () => {

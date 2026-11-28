@@ -61,6 +61,10 @@ export const users = pgTable("users", {
   passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
   /** Set when the user first follows an emailed link; null for a self-registered account that has not yet. */
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  /** Site terms and privacy policy acceptance: versions, hash of the text shown, and when. */
+  termsVersion: text("terms_version"),
+  termsHash: text("terms_hash"),
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -77,6 +81,13 @@ export const loginAttempts = pgTable("login_attempts", {
   id: id(),
   email: text("email").notNull(),
   succeeded: boolean("succeeded").notNull().default(false),
+  createdAt: createdAt(),
+});
+
+/** Abuse throttle: one row per counted request, keyed by purpose and a hash of the network address. System access only. */
+export const throttleEvents = pgTable("throttle_events", {
+  id: id(),
+  key: text("key").notNull(),
   createdAt: createdAt(),
 });
 

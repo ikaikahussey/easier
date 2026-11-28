@@ -1,16 +1,27 @@
 import Link from "next/link";
 import { passwordLoginAction, requestLoginAction } from "@/app/actions";
+import { siteIsOpen } from "@/core/services/auth";
 import { Button, Card, Notice, PageTitle, Shell, inputClass } from "@/ui/components";
+
+// Access mode is read per request.
+export const dynamic = "force-dynamic";
 
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; sent?: string }> }) {
   const { error, sent } = await searchParams;
+  const open = siteIsOpen();
   return (
     <Shell>
       <div className="mx-auto max-w-md">
-        <PageTitle kicker="Invitation only until launch">Sign in</PageTitle>
+        <PageTitle kicker={open ? undefined : "Invitation only until launch"}>Sign in</PageTitle>
         <Notice
           error={error}
-          success={sent ? "If this email has access, a sign-in link is on its way. It expires in 15 minutes. If not, you are on the waitlist." : undefined}
+          success={
+            sent
+              ? open
+                ? "A sign-in link is on its way. It expires in 15 minutes."
+                : "If this email has access, a sign-in link is on its way. It expires in 15 minutes. If not, you are on the waitlist."
+              : undefined
+          }
         />
         <Card>
           <form action={passwordLoginAction} className="space-y-4">

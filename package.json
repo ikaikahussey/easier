@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "check": "npm run typecheck && npm test && npm run build && npm run e2e",
     "e2e": "node scripts/e2e.mjs",
-    "vercel-build": "node scripts/migrate.mjs && next build"
+    "preflight": "node scripts/preflight.mjs",
+    "vercel-build": "node scripts/preflight.mjs && node scripts/migrate.mjs && next build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",

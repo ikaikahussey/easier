@@ -25,6 +25,7 @@ import {
   setMisNotified,
 } from "@/programs/part-120/service";
 import { requireActor } from "@/ui/session";
+import { HOUR, limit } from "@/ui/throttle";
 
 const VIEWS = ["dashboard", "roster", "random", "events", "records", "contractors", "audit", "mis"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -148,6 +149,7 @@ export async function requestPart120AccessAction(fd: FormData) {
   if (!part120Enabled()) notFound();
   const email = fd.get("email");
   try {
+    await limit("waitlist", 10, HOUR);
     await joinWaitlist(typeof email === "string" ? email : "", "aviation");
   } catch (err) {
     if (err && typeof err === "object" && "digest" in err) throw err;

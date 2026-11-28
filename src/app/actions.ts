@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { parseForm } from "@/core/fields";
 import {
+  acceptSiteTerms,
   consumeLogin,
   hasPassword,
   joinWaitlist,
@@ -33,6 +34,7 @@ import { WorkflowError, type Action } from "@/core/workflow";
 import { CryptoError } from "@/core/crypto";
 import { getProduct } from "@/products";
 import { endSession, requireActor, requireAdmin, requireStaff, startSession } from "@/ui/session";
+import { HOUR, limit } from "@/ui/throttle";
 
 const str = (fd: FormData, k: string) => {
   const v = fd.get(k);
@@ -65,6 +67,7 @@ async function attempt(path: string, fn: () => Promise<string | void>): Promise<
 export async function requestLoginAction(fd: FormData) {
   await attempt("/login", async () => {
     const email = str(fd, "email");
+    await limit("login-link", 20, HOUR);
     const token = await requestLogin(email);
     if (!token) return "/login?sent=1"; // Same response either way: no hint about who has access.
     await sendLoginLink(email.trim().toLowerCase(), linkUrl(token));
@@ -88,7 +91,8 @@ export async function signUpAction(fd: FormData) {
   try {
     const password = str(fd, "password");
     if (password !== str(fd, "confirm")) throw new ValidationError(["Passwords do not match"]);
-    result = await signUp(str(fd, "email"), password, str(fd, "name"));
+    await limit("signup", 10, HOUR);
+    result = await signUp(str(fd, "email"), password, str(fd, "name"), fd.get("accept") ? str(fd, "termsHash") : undefined);
   } catch (err) {
     redirect(`/signup?error=${encodeURIComponent(message(err))}`);
   }
@@ -107,8 +111,18 @@ export async function resendVerificationAction() {
   });
 }
 
+/** For accounts created by an emailed link, or when the terms have changed since the account accepted them. */
+export async function acceptSiteTermsAction(fd: FormData) {
+  const actor = await requireActor();
+  await attempt("/app", async () => {
+    if (!fd.get("accept")) throw new ValidationError(["Check the box to accept"]);
+    await acceptSiteTerms(actor.id, str(fd, "termsHash"));
+  });
+}
+
 export async function joinWaitlistAction(fd: FormData) {
   await attempt("/", async () => {
+    await limit("waitlist", 10, HOUR);
     await joinWaitlist(str(fd, "email"), str(fd, "kind") as WaitlistKind);
     return "/?joined=1#waitlist";
   });
@@ -127,6 +141,7 @@ export async function verifyLoginAction(fd: FormData) {
 export async function passwordLoginAction(fd: FormData) {
   let actor;
   try {
+    await limit("login", 40, HOUR / 4);
     actor = await loginWithPassword(str(fd, "email"), str(fd, "password"));
   } catch (err) {
     redirect(`/login?error=${encodeURIComponent(message(err))}`);
